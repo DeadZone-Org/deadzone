@@ -14,9 +14,16 @@
       "minSdkVersion": 23,
       "edgeToEdgeEnabled": true
     },
-    "plugins": ["./plugins/withBlePermissions", "./plugins/withCleartextTraffic", "expo-dev-client"],
+    "plugins": [
+      "./plugins/withBlePermissions",
+      "./plugins/withCleartextTraffic",
+      "expo-dev-client"
+    ],
     "extra": {
-      "gatewayUrl": "http://192.168.1.6:8787"
+      "gatewayUrl": "http://192.168.1.6:8787",
+      "eas": {
+        "projectId": "f4b902f6-f8fd-48de-b352-e9a950392ba9"
+      }
     },
     "ios": {
       "bundleIdentifier": "com.deadzone.app"
