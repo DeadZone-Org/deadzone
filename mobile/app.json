@@ -17,6 +17,7 @@
     "plugins": [
       "./plugins/withBlePermissions",
       "./plugins/withCleartextTraffic",
+      "./plugins/withFixBleAdvertiserSdk",
       "expo-dev-client"
     ],
     "extra": {
