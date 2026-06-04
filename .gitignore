@@ -8,3 +8,5 @@ broadcast/
 dist/
 .expo/
 web/.next/
+gateway/.env
+web/dist/

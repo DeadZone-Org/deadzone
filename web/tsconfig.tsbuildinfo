@@ -1,0 +1,1 @@
+{"root":["./src/App.tsx","./src/main.tsx","./src/components/AgentConsole.tsx","./src/components/CourierCard.tsx","./src/components/MeshCanvas.tsx","./src/components/SendPanel.tsx","./src/lib/api.ts","./vite.config.ts"],"version":"5.9.3"}

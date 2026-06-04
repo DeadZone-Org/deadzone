@@ -72,6 +72,11 @@ export class Erc8004 {
     return this.agentId;
   }
 
+  /** Reuse a known, already-minted agentId instead of registering a new identity NFT. */
+  useExistingIdentity(id: bigint): void {
+    this.agentId = id;
+  }
+
   /**
    * Ensure this courier has an ERC-8004 identity NFT. Mints one (register) if agentId
    * is unset, binds the settling wallet, and returns the agentId.

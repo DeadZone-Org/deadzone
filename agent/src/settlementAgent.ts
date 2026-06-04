@@ -77,7 +77,10 @@ export class SettlementAgent {
     let skipped: string[] = [];
     let gasUsedWei = 0n;
     let settleTx = '0xSIM_settle';
-    if (dryRun || !this.deps.settle) {
+    if (plan.settleNow.length === 0) {
+      settleTx = '0xnone';
+      this.log('⛓️  nothing valid to settle — no on-chain settlement submitted');
+    } else if (dryRun || !this.deps.settle) {
       landed = plan.settleNow.map((a) => a.nonce);
       gasUsedWei = plan.gasPriceWei * BigInt(21_000 * Math.max(1, plan.settleNow.length));
       this.log(`⛓️  (dry-run) settled ${landed.length} payment(s) on Mantle${plan.batched ? ' (batched)' : ''}`);
