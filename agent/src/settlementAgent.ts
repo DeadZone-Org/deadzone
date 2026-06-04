@@ -93,7 +93,7 @@ export class SettlementAgent {
     // 5. ATTEST outcome + reputation
     const total = landed.length + skipped.length;
     const score = total === 0 ? 0 : Math.round((landed.length / total) * 100);
-    const { attestTx } = await this.deps.erc8004.attest({ landed, gasUsedWei }, score);
+    const { attestTx } = await this.deps.erc8004.attest({ landed, gasUsedWei }, score, planHash);
     this.log(`📜 attested outcome + reputation (score ${score}) tx ${attestTx}`);
 
     return {

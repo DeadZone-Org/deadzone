@@ -45,13 +45,13 @@ export const DEFAULT_CHAIN = MANTLE_SEPOLIA;
  * thin attestation fallback in contracts/ and point these there.
  */
 export const ADDRESSES = {
-  // Deployed to Mantle Sepolia (5003) — 2026-06-04 (Deadzone branding)
-  deadzoneToken: '0x3887c55b01d5664d8ABa7dB526C9bf24BfAe4272',
-  deadzoneSettlement: '0xBC133614d147216beA6219189f3F5c4358fcf870',
+  // Full stack deployed together to Mantle Sepolia (5003) — 2026-06-04
+  deadzoneToken: '0xEF1ec1FeA446E6a7869221F00c9DC76306edca54',
+  deadzoneSettlement: '0xF817E6947CC94559e3e6AfF9f06fe938C3A0c652',
   erc8004: {
-    identityRegistry: '0x0000000000000000000000000000000000000000', // verify on Mantle
-    reputationRegistry: '0x0000000000000000000000000000000000000000',
-    validationRegistry: '0x0000000000000000000000000000000000000000',
+    identityRegistry: '0x6dd59064BC298BA85AA11a2953DA2BaA92B46382',
+    validationRegistry: '0x936D1Aa670590767070Cb9Bde0264aA4d1543275',
+    reputationRegistry: '0x94ddC4368F8ac592Ad41067F11E43D43CDd65d94',
   },
 } as const;
 
