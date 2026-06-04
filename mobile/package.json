@@ -6,7 +6,8 @@
     "start": "expo start --dev-client",
     "android": "expo run:android",
     "prebuild": "expo prebuild --platform android",
-    "build:apk": "expo run:android --variant release"
+    "build:apk": "expo run:android --variant release",
+    "ios": "expo run:ios"
   },
   "dependencies": {
     "@react-native-async-storage/async-storage": "^2.2.0",
