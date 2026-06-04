@@ -1,0 +1,10 @@
+node_modules/
+contracts/node_modules/
+contracts/out/
+contracts/cache/
+.env
+*.local
+broadcast/
+dist/
+.expo/
+web/.next/

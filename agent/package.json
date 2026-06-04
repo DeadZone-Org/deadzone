@@ -1,0 +1,21 @@
+{
+  "name": "@deadzone/agent",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "DEADZONE autonomous Settlement Agent — validate -> plan (LLM+fallback) -> pre-commit (ERC-8004) -> settle on Mantle -> attest -> self-correct",
+  "main": "src/index.ts",
+  "scripts": {
+    "demo": "node --env-file-if-exists=.env --import tsx src/demo.ts",
+    "settle:live": "node --env-file-if-exists=.env --env-file-if-exists=../contracts/.env --import tsx src/settleLive.ts",
+    "test": "node --env-file-if-exists=.env --import tsx --test src/*.test.ts",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "ethers": "^6.16.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.19.19",
+    "tsx": "^4.22.4",
+    "typescript": "^5.9.3"
+  }
+}
