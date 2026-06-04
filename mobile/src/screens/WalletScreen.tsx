@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react';
 import { Linking, StyleSheet, Text, View } from 'react-native';
-import { Contract, JsonRpcProvider, Wallet, formatUnits } from 'ethers';
+import { Wallet, formatUnits } from 'ethers';
 import { Btn, Chip, Panel } from '../components/ui';
-import { faucet } from '../lib/gateway';
+import { balance, faucet } from '../lib/gateway';
 import { CHAIN, C, MONO, TOKEN } from '../theme';
 
 export function WalletScreen({ wallet }: { wallet: Wallet }) {
@@ -12,9 +12,7 @@ export function WalletScreen({ wallet }: { wallet: Wallet }) {
 
   async function refresh() {
     try {
-      const provider = new JsonRpcProvider(CHAIN.rpc, CHAIN.id);
-      const token = new Contract(TOKEN.address, ['function balanceOf(address) view returns (uint256)'], provider);
-      const b: bigint = await token.balanceOf(wallet.address);
+      const b = await balance(wallet.address); // via the gateway, no in-app RPC
       setBal(formatUnits(b, TOKEN.decimals));
     } catch {
       setBal('offline');

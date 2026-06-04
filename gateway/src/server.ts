@@ -83,6 +83,21 @@ app.use('/api/', (req, res, next) => {
 
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'deadzone-gateway' }));
 
+/** dUSD balance of an address (so the app never needs to talk to an RPC directly). */
+app.get('/api/balance/:address', async (req, res) => {
+  const c = checkAddress(req.params.address);
+  if (!c.ok) {
+    res.status(400).json({ error: c.error });
+    return;
+  }
+  try {
+    const bal: bigint = await token.balanceOf(c.value);
+    res.json({ address: c.value, balance: bal.toString() });
+  } catch (e) {
+    res.status(500).json({ error: (e as Error).message });
+  }
+});
+
 /** Courier identity, on-chain reputation, brain availability. */
 app.get('/api/status', async (_req, res) => {
   try {

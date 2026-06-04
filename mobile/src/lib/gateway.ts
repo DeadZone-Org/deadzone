@@ -42,6 +42,19 @@ export function relay(auth: WireAuth) {
   return post<SettleResult>('/api/relay', { auth });
 }
 
+/** Read an address's dUSD balance via the gateway (no in-app RPC). */
+export async function balance(address: string): Promise<bigint> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), 12_000);
+  try {
+    const res = await fetch(`${GATEWAY_URL}/api/balance/${address}`, { signal: ctrl.signal });
+    const json = (await res.json()) as { balance?: string };
+    return BigInt(json.balance ?? '0');
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 export async function status(): Promise<any> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 12_000);
