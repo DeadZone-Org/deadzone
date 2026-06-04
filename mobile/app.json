@@ -1,0 +1,25 @@
+{
+  "expo": {
+    "name": "Deadzone",
+    "slug": "deadzone",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "scheme": "deadzone",
+    "userInterfaceStyle": "dark",
+    "newArchEnabled": true,
+    "android": {
+      "package": "com.deadzone.app",
+      "compileSdkVersion": 34,
+      "targetSdkVersion": 34,
+      "minSdkVersion": 23,
+      "edgeToEdgeEnabled": true
+    },
+    "plugins": ["./plugins/withBlePermissions", "expo-dev-client"],
+    "extra": {
+      "gatewayUrl": "http://192.168.1.6:8787"
+    },
+    "ios": {
+      "bundleIdentifier": "com.deadzone.app"
+    }
+  }
+}

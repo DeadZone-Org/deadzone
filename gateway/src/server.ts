@@ -84,21 +84,67 @@ app.get('/api/status', async (_req, res) => {
   }
 });
 
-/** Pay endpoint — the full offline-signed → mesh → gateway-settles loop, returned as steps. */
-app.post('/api/pay', async (req, res) => {
-  const to: string = req.body?.to ?? '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC';
-  const amount: string = String(req.body?.amount ?? '100');
-  const expire = Boolean(req.body?.expire); // demo flag: sign an already-expired auth to show a live rejection
+interface IncomingAuth {
+  from: string;
+  to: string;
+  value: string; // wei (string)
+  validAfter: number;
+  validBefore: number;
+  nonce: string;
+  signature: string;
+}
 
+/** Run the autonomous agent on one authorization and return the structured result. */
+async function settleAuth(auth: {
+  from: string;
+  to: string;
+  value: bigint;
+  validAfter: number;
+  validBefore: number;
+  nonce: string;
+  signature: string;
+}) {
   const steps: { at: number; line: string }[] = [];
   const t0 = Date.now();
   const log = (line: string) => steps.push({ at: Date.now() - t0, line });
 
-  try {
-    const id = await courierId();
-    const beforeBal: bigint = await token.balanceOf(to);
+  const id = await courierId();
+  const beforeBal: bigint = await token.balanceOf(auth.to);
+  const agent = new SettlementAgent({
+    view: new RpcChainView(provider, A.token),
+    domain,
+    erc8004,
+    courierAgentId: id,
+    settle,
+    forceFallback: !process.env.ZAI_API_KEY && !process.env.ANTHROPIC_API_KEY,
+    log,
+  });
+  const { plan, outcome } = await agent.process([auth]);
+  const afterBal: bigint = await token.balanceOf(auth.to);
+  const [count, score] = await reputationView.getSummary(id);
 
-    // 1) offline-sign (this is what a phone does with no internet)
+  return {
+    ok: outcome.landed.length > 0,
+    plan: { source: plan.source, rationale: plan.rationale, batched: plan.batched },
+    rejected: plan.reject.map((r) => ({ reason: r.reason })),
+    steps,
+    txs: { preCommit: outcome.preCommitTx, settle: outcome.settleTx, attest: outcome.attestTx },
+    explorerTxs: {
+      preCommit: `${EXPLORER}/tx/${outcome.preCommitTx}`,
+      settle: `${EXPLORER}/tx/${outcome.settleTx}`,
+      attest: `${EXPLORER}/tx/${outcome.attestTx}`,
+    },
+    recipientDelta: (afterBal - beforeBal).toString(),
+    reputation: { deliveries: Number(count), score: Number(score) },
+  };
+}
+
+/** Pay — the gateway signs on behalf of its own wallet (web demo convenience). */
+app.post('/api/pay', async (req, res) => {
+  const to: string = req.body?.to ?? '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC';
+  const amount: string = String(req.body?.amount ?? '100');
+  const expire = Boolean(req.body?.expire);
+  try {
     const auth = await signAuthorization(wallet, domain, {
       from: wallet.address,
       to,
@@ -107,44 +153,58 @@ app.post('/api/pay', async (req, res) => {
       validBefore: expire ? 1 : Math.floor(Date.now() / 1000) + 3600,
       nonce: keccak256(toUtf8Bytes(`deadzone-${Date.now()}-${Math.round(Number(amount))}`)),
     });
-    log(`signed ${amount} dUSD → ${to.slice(0, 8)}… offline (gasless EIP-3009)`);
-
-    // 2) gateway agent runs the verifiable loop
-    const agent = new SettlementAgent({
-      view: new RpcChainView(provider, A.token),
-      domain,
-      erc8004,
-      courierAgentId: id,
-      settle,
-      forceFallback: !process.env.ZAI_API_KEY && !process.env.ANTHROPIC_API_KEY,
-      log,
-    });
-    const { plan, outcome } = await agent.process([auth]);
-
-    const afterBal: bigint = await token.balanceOf(to);
-    const [count, score] = await reputationView.getSummary(id);
-
-    res.json({
-      ok: outcome.landed.length > 0,
-      plan: { source: plan.source, rationale: plan.rationale, batched: plan.batched },
-      rejected: plan.reject.map((r) => ({ reason: r.reason })),
-      steps,
-      txs: {
-        preCommit: outcome.preCommitTx,
-        settle: outcome.settleTx,
-        attest: outcome.attestTx,
-      },
-      explorerTxs: {
-        preCommit: `${EXPLORER}/tx/${outcome.preCommitTx}`,
-        settle: `${EXPLORER}/tx/${outcome.settleTx}`,
-        attest: `${EXPLORER}/tx/${outcome.attestTx}`,
-      },
-      recipientDelta: (afterBal - beforeBal).toString(),
-      reputation: { deliveries: Number(count), score: Number(score) },
-    });
+    const result = await settleAuth(auth);
+    result.steps.unshift({ at: 0, line: `signed ${amount} dUSD → ${to.slice(0, 8)}… offline (gasless EIP-3009)` });
+    res.json(result);
   } catch (e) {
-    log(`error: ${(e as Error).message}`);
-    res.status(500).json({ ok: false, steps, error: (e as Error).message });
+    res.status(500).json({ ok: false, steps: [], error: (e as Error).message });
+  }
+});
+
+/** Relay — settle an authorization that a PHONE signed offline and the mesh carried in. */
+app.post('/api/relay', async (req, res) => {
+  const a = req.body?.auth as IncomingAuth | undefined;
+  if (!a?.signature || !a?.from || !a?.to) {
+    res.status(400).json({ ok: false, error: 'missing auth fields' });
+    return;
+  }
+  try {
+    const result = await settleAuth({
+      from: a.from,
+      to: a.to,
+      value: BigInt(a.value),
+      validAfter: Number(a.validAfter),
+      validBefore: Number(a.validBefore),
+      nonce: a.nonce,
+      signature: a.signature,
+    });
+    result.steps.unshift({ at: 0, line: `received off the mesh: ${a.from.slice(0, 8)}… → ${a.to.slice(0, 8)}…` });
+    res.json(result);
+  } catch (e) {
+    res.status(500).json({ ok: false, steps: [], error: (e as Error).message });
+  }
+});
+
+/** Faucet — mint demo dUSD to a fresh phone wallet so it has something to send. */
+app.post('/api/faucet', async (req, res) => {
+  const to: string = req.body?.address;
+  const amount: string = String(req.body?.amount ?? '1000');
+  if (!to) {
+    res.status(400).json({ error: 'address required' });
+    return;
+  }
+  try {
+    const tokenRw = new Contract(
+      A.token,
+      ['function mint(address,uint256)', 'function balanceOf(address) view returns (uint256)'],
+      wallet,
+    );
+    const tx = await tokenRw.mint(to, parseUnits(amount, 18));
+    await tx.wait();
+    const bal: bigint = await tokenRw.balanceOf(to);
+    res.json({ ok: true, tx: tx.hash, explorer: `${EXPLORER}/tx/${tx.hash}`, balance: bal.toString() });
+  } catch (e) {
+    res.status(500).json({ ok: false, error: (e as Error).message });
   }
 });
 
