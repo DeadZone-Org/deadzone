@@ -19,6 +19,7 @@ import {
   signAuthorization,
 } from '../../agent/src/index.js';
 import type { Eip712Domain } from '../../agent/src/index.js';
+import { Cooldown, LIMITS, RateLimiter, checkAddress, checkAmount } from './guards.js';
 
 const RPC = process.env.MANTLE_SEPOLIA_RPC ?? 'https://rpc.sepolia.mantle.xyz';
 const PORT = Number(process.env.PORT ?? 8787);
@@ -65,7 +66,22 @@ async function courierId(): Promise<bigint> {
 
 const app = express();
 app.use(cors());
-app.use(express.json());
+app.use(express.json({ limit: '64kb' }));
+
+// safety: bound every endpoint (the gateway holds the courier key + pays gas)
+const limiter = new RateLimiter();
+const faucetCooldown = new Cooldown();
+const clientKey = (req: express.Request) =>
+  (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'anon';
+app.use('/api/', (req, res, next) => {
+  if (req.method === 'POST' && !limiter.allow(clientKey(req))) {
+    res.status(429).json({ error: 'rate limit — slow down' });
+    return;
+  }
+  next();
+});
+
+app.get('/health', (_req, res) => res.json({ ok: true, service: 'deadzone-gateway' }));
 
 /** Courier identity, on-chain reputation, brain availability. */
 app.get('/api/status', async (_req, res) => {
@@ -141,20 +157,29 @@ async function settleAuth(auth: {
 
 /** Pay — the gateway signs on behalf of its own wallet (web demo convenience). */
 app.post('/api/pay', async (req, res) => {
-  const to: string = req.body?.to ?? '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC';
-  const amount: string = String(req.body?.amount ?? '100');
   const expire = Boolean(req.body?.expire);
+  const toCheck = checkAddress(req.body?.to ?? '0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC');
+  if (!toCheck.ok) {
+    res.status(400).json({ ok: false, error: toCheck.error });
+    return;
+  }
+  const amtCheck = checkAmount(req.body?.amount ?? '100');
+  if (!amtCheck.ok) {
+    res.status(400).json({ ok: false, error: amtCheck.error });
+    return;
+  }
+  const to = toCheck.value;
   try {
     const auth = await signAuthorization(wallet, domain, {
       from: wallet.address,
       to,
-      value: parseUnits(amount, 18),
+      value: amtCheck.value,
       validAfter: 0,
       validBefore: expire ? 1 : Math.floor(Date.now() / 1000) + 3600,
-      nonce: keccak256(toUtf8Bytes(`deadzone-${Date.now()}-${Math.round(Number(amount))}`)),
+      nonce: keccak256(toUtf8Bytes(`deadzone-${Date.now()}-${Math.random()}`)),
     });
     const result = await settleAuth(auth);
-    result.steps.unshift({ at: 0, line: `signed ${amount} dUSD → ${to.slice(0, 8)}… offline (gasless EIP-3009)` });
+    result.steps.unshift({ at: 0, line: `signed ${req.body?.amount ?? '100'} dUSD → ${to.slice(0, 8)}… offline (gasless EIP-3009)` });
     res.json(result);
   } catch (e) {
     res.status(500).json({ ok: false, steps: [], error: (e as Error).message });
@@ -168,11 +193,28 @@ app.post('/api/relay', async (req, res) => {
     res.status(400).json({ ok: false, error: 'missing auth fields' });
     return;
   }
+  const fromCheck = checkAddress(a.from);
+  const toCheck = checkAddress(a.to);
+  if (!fromCheck.ok || !toCheck.ok) {
+    res.status(400).json({ ok: false, error: 'invalid from/to address' });
+    return;
+  }
+  let value: bigint;
+  try {
+    value = BigInt(a.value);
+  } catch {
+    res.status(400).json({ ok: false, error: 'invalid value' });
+    return;
+  }
+  if (value <= 0n || value > BigInt(LIMITS.maxPayAmount) * 10n ** 18n) {
+    res.status(400).json({ ok: false, error: `value out of range (cap ${LIMITS.maxPayAmount} dUSD)` });
+    return;
+  }
   try {
     const result = await settleAuth({
-      from: a.from,
-      to: a.to,
-      value: BigInt(a.value),
+      from: fromCheck.value,
+      to: toCheck.value,
+      value,
       validAfter: Number(a.validAfter),
       validBefore: Number(a.validBefore),
       nonce: a.nonce,
@@ -185,12 +227,17 @@ app.post('/api/relay', async (req, res) => {
   }
 });
 
-/** Faucet — mint demo dUSD to a fresh phone wallet so it has something to send. */
+/** Faucet — mint a FIXED demo grant to a fresh phone wallet, once per cooldown per address. */
 app.post('/api/faucet', async (req, res) => {
-  const to: string = req.body?.address;
-  const amount: string = String(req.body?.amount ?? '1000');
-  if (!to) {
-    res.status(400).json({ error: 'address required' });
+  const addrCheck = checkAddress(req.body?.address);
+  if (!addrCheck.ok) {
+    res.status(400).json({ ok: false, error: addrCheck.error });
+    return;
+  }
+  const to = addrCheck.value;
+  const cd = faucetCooldown.check(to);
+  if (!cd.ok) {
+    res.status(429).json({ ok: false, error: `faucet cooldown — retry in ${Math.ceil(cd.retryInMs / 1000)}s` });
     return;
   }
   try {
@@ -199,8 +246,9 @@ app.post('/api/faucet', async (req, res) => {
       ['function mint(address,uint256)', 'function balanceOf(address) view returns (uint256)'],
       wallet,
     );
-    const tx = await tokenRw.mint(to, parseUnits(amount, 18));
+    const tx = await tokenRw.mint(to, parseUnits(String(LIMITS.faucetAmount), 18)); // fixed grant; ignores client amount
     await tx.wait();
+    faucetCooldown.mark(to);
     const bal: bigint = await tokenRw.balanceOf(to);
     res.json({ ok: true, tx: tx.hash, explorer: `${EXPLORER}/tx/${tx.hash}`, balance: bal.toString() });
   } catch (e) {
