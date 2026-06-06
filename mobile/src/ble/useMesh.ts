@@ -1,11 +1,16 @@
 import NetInfo from '@react-native-community/netinfo';
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { PermissionsAndroid, Platform } from 'react-native';
+import BleAdvertiser from 'react-native-ble-advertiser';
 import { BleManager } from 'react-native-ble-plx';
-import { relay, type SettleResult } from '../lib/gateway';
+import { pushLogs, relay, type SettleResult } from '../lib/gateway';
 import type { WireAuth } from '../lib/eip3009';
+import { decodeAuth, encodeAuth } from '../lib/codec';
 import {
+  DATA_PER_CHUNK,
+  HEADER_SIZE,
   broadcastOverBle,
+  encodeBytesToChunks,
   encodeMessageToChunks,
   listenOverBle,
   stopBleBroadcast,
@@ -14,7 +19,7 @@ import {
 export type MeshRole = 'offline' | 'gateway';
 export interface MeshEvent {
   at: number;
-  kind: 'info' | 'rx' | 'tx' | 'settle' | 'error';
+  kind: 'info' | 'rx' | 'tx' | 'settle' | 'error' | 'peer';
   line: string;
 }
 
@@ -24,13 +29,14 @@ interface Reassembly {
   done: boolean;
 }
 
-const HEADER = 3;
-const DATA_PER_CHUNK = 6;
+const PRESENCE_PREFIX = 'DZP:';
+const PEER_TTL_MS = 7000;
 
 /**
- * Deadzone mesh radio. Adapted from NONET's proven BLE context:
- *  - sendOffline(): fragment a signed authorization and advertise it over BLE
- *  - always scanning + relaying chunks it hears
+ * Deadzone mesh radio. Adapted from NONET's proven BLE context, plus a continuous
+ * presence beacon so nearby phones can SEE each other before any payment is sent.
+ *  - always advertises: a tiny presence beacon when idle, payment fragments when sending
+ *  - always scans + relays
  *  - if THIS device has internet (gateway role): reassemble a full authorization and
  *    forward it to the gateway to settle on Mantle
  */
@@ -39,17 +45,26 @@ export function useMesh() {
   const [peers, setPeers] = useState(0);
   const [events, setEvents] = useState<MeshEvent[]>([]);
   const [broadcasting, setBroadcasting] = useState(false);
+  const [lastSettle, setLastSettle] = useState<{ tx: string; url: string; delta: string } | null>(null);
 
   const managerRef = useRef<BleManager | null>(null);
   const inbox = useRef<Map<number, Reassembly>>(new Map());
-  const seenPeers = useRef<Set<string>>(new Set());
+  const peerSeen = useRef<Map<string, number>>(new Map());
   const onlineRef = useRef(false);
   const t0 = useRef(Date.now());
   const queueRef = useRef<Uint8Array[]>([]);
   const cursorRef = useRef(0);
   const loopRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const myIdRef = useRef<string>(Math.floor(Math.random() * 256).toString(16).padStart(2, '0'));
+  const presenceRef = useRef<Uint8Array[]>([]);
+  const advOkRef = useRef(false);
+  const advErrRef = useRef(false);
+  const advStateRef = useRef<'idle' | 'presence' | 'payment'>('idle');
+  const pendingLogsRef = useRef<string[]>([]);
 
   const log = useCallback((kind: MeshEvent['kind'], line: string) => {
+    const at = ((Date.now() - t0.current) / 1000).toFixed(1);
+    pendingLogsRef.current.push(`+${at}s [${kind}] ${line}`); // streamed to the gateway for remote debugging
     setEvents((prev) => [...prev.slice(-40), { at: Date.now() - t0.current, kind, line }]);
   }, []);
 
@@ -63,9 +78,13 @@ export function useMesh() {
     return () => unsub();
   }, []);
 
-  // permissions + manager + scan loop
+  // permissions + manager + scan loop + presence beacon
   useEffect(() => {
     let stopListen: (() => void) | null = null;
+
+    // precompute our presence beacon: "DZP:<id>" (single BLE fragment)
+    presenceRef.current = encodeMessageToChunks(`${PRESENCE_PREFIX}${myIdRef.current}`);
+
     (async () => {
       if (Platform.OS === 'android') {
         await PermissionsAndroid.requestMultiple([
@@ -75,115 +94,197 @@ export function useMesh() {
           'android.permission.ACCESS_FINE_LOCATION' as any,
         ]);
       }
+      try {
+        (BleAdvertiser as any).setCompanyId(0xffff);
+      } catch {
+        /* some versions don't need this */
+      }
       const mgr = new BleManager();
       managerRef.current = mgr;
-      log('info', 'mesh radio online · scanning for peers');
+      log('info', `mesh radio online · id ${myIdRef.current} · scanning + beaconing`);
       stopListen = listenOverBle(mgr, (chunk) => onChunk(chunk));
     })();
 
-    // round-robin re-broadcast loop (keeps fragments alive across the mesh)
-    loopRef.current = setInterval(() => {
-      const q = queueRef.current;
-      if (q.length === 0) return;
-      const chunk = q[cursorRef.current % q.length];
-      cursorRef.current += 1;
-      broadcastOverBle(chunk).catch(() => {});
-    }, 280);
+    // broadcast loop: cycle payment fragments while sending, else advertise presence once
+    loopRef.current = setInterval(async () => {
+      try {
+        if (queueRef.current.length > 0) {
+          const chunk = queueRef.current[cursorRef.current % queueRef.current.length];
+          cursorRef.current += 1;
+          await broadcastOverBle(chunk);
+          advStateRef.current = 'payment';
+        } else if (advStateRef.current !== 'presence' && presenceRef.current.length > 0) {
+          await broadcastOverBle(presenceRef.current[0]); // leave it advertising continuously
+          advStateRef.current = 'presence';
+        } else {
+          return;
+        }
+        if (!advOkRef.current) {
+          advOkRef.current = true;
+          log('info', 'advertising ✓ — beacon on air');
+        }
+      } catch (e) {
+        advStateRef.current = 'idle';
+        if (!advErrRef.current) {
+          advErrRef.current = true;
+          log('error', `advertising failed: ${(e as Error)?.message ?? e}`);
+        }
+      }
+    }, 220);
+
+    // stream buffered logs to the gateway (works once this device is online; buffers while offline)
+    const flush = setInterval(async () => {
+      if (pendingLogsRef.current.length === 0) return;
+      const batch = pendingLogsRef.current.slice(0, 60);
+      const ok = await pushLogs(
+        myIdRef.current,
+        onlineRef.current ? 'gateway' : 'offline',
+        peerSeen.current.size,
+        batch,
+      );
+      if (ok) pendingLogsRef.current = pendingLogsRef.current.slice(batch.length);
+    }, 2500);
+
+    // prune stale peers + refresh the count
+    const prune = setInterval(() => {
+      const now = Date.now();
+      let changed = false;
+      for (const [id, ts] of peerSeen.current) {
+        if (now - ts > PEER_TTL_MS) {
+          peerSeen.current.delete(id);
+          changed = true;
+        }
+      }
+      if (changed) setPeers(peerSeen.current.size);
+    }, 2000);
 
     return () => {
       stopListen?.();
       if (loopRef.current) clearInterval(loopRef.current);
+      clearInterval(prune);
+      clearInterval(flush);
       stopBleBroadcast().catch(() => {});
       managerRef.current?.destroy();
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  // handle one received chunk: reassemble; relay to gateway if we're online
-  const onChunk = useCallback((chunk: Uint8Array) => {
-    if (!chunk || chunk.length < HEADER) return;
-    const id = chunk[0];
-    const total = chunk[1];
-    const idx = chunk[2] & 0b01111111;
+  const markPeer = useCallback(
+    (peerId: string) => {
+      if (peerId === myIdRef.current) return;
+      const isNew = !peerSeen.current.has(peerId);
+      peerSeen.current.set(peerId, Date.now());
+      setPeers(peerSeen.current.size);
+      if (isNew) log('peer', `peer ${peerId} in range`);
+    },
+    [log],
+  );
 
-    // count this as a live peer signal
-    const key = `${id}`;
-    if (!seenPeers.current.has(key)) {
-      seenPeers.current.add(key);
-      setPeers(seenPeers.current.size);
-    }
+  // handle one received fragment: presence beacon OR payment reassembly
+  const onChunk = useCallback(
+    (chunk: Uint8Array) => {
+      if (!chunk || chunk.length < HEADER_SIZE) return;
+      const id = chunk[0];
+      const total = chunk[1];
+      const idx = chunk[2] & 0b01111111;
+      const data = chunk.slice(HEADER_SIZE);
 
-    let entry = inbox.current.get(id);
-    if (!entry) {
-      entry = { total, chunks: new Map(), done: false };
-      inbox.current.set(id, entry);
-    }
-    if (entry.done) return;
-    if (!entry.chunks.has(idx)) {
-      entry.chunks.set(idx, chunk.slice(HEADER));
-      // keep relaying what we hear
-      queueRef.current = dedupePush(queueRef.current, chunk);
-    }
-
-    if (entry.chunks.size >= entry.total) {
-      entry.done = true;
-      const bytes: number[] = [];
-      for (let i = 1; i <= entry.total; i++) {
-        const part = entry.chunks.get(i);
-        if (part) bytes.push(...Array.from(part).slice(0, DATA_PER_CHUNK));
+      // single-fragment messages: could be a presence beacon — handle without reassembly
+      if (total === 1) {
+        const text = new TextDecoder().decode(data).replace(/\0/g, '');
+        if (text.startsWith(PRESENCE_PREFIX)) {
+          markPeer(text.slice(PRESENCE_PREFIX.length));
+          return;
+        }
       }
-      const text = new TextDecoder().decode(Uint8Array.from(bytes)).replace(/\0/g, '');
-      log('rx', `reassembled a payment off the mesh (${entry.total} fragments)`);
-      tryGateway(text);
-    }
-  }, [log]);
+
+      // otherwise: payment fragment → reassemble
+      let entry = inbox.current.get(id);
+      if (!entry) {
+        entry = { total, chunks: new Map(), done: false };
+        inbox.current.set(id, entry);
+      }
+      if (entry.done) return;
+      if (!entry.chunks.has(idx)) {
+        entry.chunks.set(idx, data);
+        // a gateway (online) settles; an offline node relays to the next hop
+        if (!onlineRef.current) queueRef.current = relayPush(queueRef.current, chunk);
+        const got = entry.chunks.size;
+        if (got === 1 || got % 6 === 0 || got === entry.total) {
+          log('rx', `receiving payment… ${got}/${entry.total} fragments`);
+        }
+      }
+
+      if (entry.chunks.size >= entry.total) {
+        entry.done = true;
+        const bytes = new Uint8Array(entry.total * DATA_PER_CHUNK);
+        for (let i = 1; i <= entry.total; i++) {
+          const part = entry.chunks.get(i);
+          if (part) bytes.set(part.slice(0, DATA_PER_CHUNK), (i - 1) * DATA_PER_CHUNK);
+        }
+        log('rx', `reassembled payment ✓ (${entry.total} fragments)`);
+        try {
+          tryGateway(decodeAuth(bytes));
+        } catch {
+          log('error', 'could not decode payment');
+        }
+      }
+    },
+    [log, markPeer],
+  );
 
   // if we have internet, settle the reassembled authorization
-  const tryGateway = useCallback(async (text: string) => {
-    if (!onlineRef.current) {
-      log('info', 'no internet here — re-broadcasting for the next hop');
-      return;
-    }
-    let auth: WireAuth;
-    try {
-      auth = JSON.parse(text);
-      if (!auth?.signature) throw new Error('not an auth');
-    } catch {
-      return; // not a Deadzone payment
-    }
-    log('info', 'gateway role · forwarding to settle on Mantle…');
-    try {
-      const res: SettleResult = await relay(auth);
-      if (res.ok) {
-        log('settle', `settled on Mantle ✓ ${res.txs?.settle?.slice(0, 14)}…`);
-      } else {
-        log('error', `rejected: ${res.rejected?.[0]?.reason ?? res.error ?? 'unknown'}`);
+  const tryGateway = useCallback(
+    async (auth: WireAuth) => {
+      if (!auth?.signature) return;
+      if (!onlineRef.current) {
+        log('info', 'no internet here — re-broadcasting for the next hop');
+        return;
       }
-    } catch (e) {
-      log('error', `gateway error: ${(e as Error).message}`);
-    }
-  }, [log]);
+      log('info', 'gateway role · forwarding to settle on Mantle…');
+      try {
+        const res: SettleResult = await relay(auth);
+        if (res.ok) {
+          log('settle', `settled on Mantle ✓ ${res.txs?.settle?.slice(0, 10)}…`);
+          setLastSettle({
+            tx: res.txs?.settle ?? '',
+            url: res.explorerTxs?.settle ?? '',
+            delta: res.recipientDelta ?? '0',
+          });
+        } else {
+          log('error', `rejected: ${res.rejected?.[0]?.reason ?? res.error ?? 'unknown'}`);
+        }
+      } catch (e) {
+        log('error', `gateway error: ${(e as Error).message}`);
+      }
+    },
+    [log],
+  );
 
   /** Fragment a signed authorization and start advertising it across the mesh. */
   const sendOffline = useCallback(
     async (auth: WireAuth) => {
-      const payload = JSON.stringify(auth);
-      const chunks = encodeMessageToChunks(payload);
+      const chunks = encodeBytesToChunks(encodeAuth(auth)); // compact binary, ~20 fragments
       queueRef.current = chunks;
       cursorRef.current = 0;
+      advStateRef.current = 'payment';
       setBroadcasting(true);
-      log('tx', `signed offline · broadcasting ${chunks.length} fragments over BLE`);
-      // if we ourselves are the gateway (online), settle immediately too
-      if (onlineRef.current) tryGateway(payload);
+      log('tx', `signed offline · airing ${chunks.length} fragments — keep phones close`);
+      if (onlineRef.current) tryGateway(auth); // we ARE the gateway → settle immediately
+      // air the payment for 30s, then return to the presence beacon
+      setTimeout(() => {
+        queueRef.current = [];
+        setBroadcasting(false);
+      }, 30000);
     },
     [log, tryGateway],
   );
 
   const role: MeshRole = online ? 'gateway' : 'offline';
-  return { role, online, peers, events, broadcasting, sendOffline };
+  return { role, online, peers, events, broadcasting, sendOffline, lastSettle };
 }
 
-function dedupePush(arr: Uint8Array[], chunk: Uint8Array): Uint8Array[] {
+function relayPush(arr: Uint8Array[], chunk: Uint8Array): Uint8Array[] {
   if (arr.length > 64) return arr;
   return [...arr, chunk];
 }

@@ -55,6 +55,24 @@ export async function balance(address: string): Promise<bigint> {
   }
 }
 
+/** Stream mesh diagnostics to the gateway so they're visible server-side. Returns false when offline. */
+export async function pushLogs(device: string, role: string, peers: number, lines: string[]): Promise<boolean> {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 6000);
+    const res = await fetch(`${GATEWAY_URL}/api/log`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ device, role, peers, lines }),
+      signal: ctrl.signal,
+    });
+    clearTimeout(t);
+    return res.ok;
+  } catch {
+    return false;
+  }
+}
+
 export async function status(): Promise<any> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), 12_000);

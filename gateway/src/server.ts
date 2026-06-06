@@ -74,6 +74,7 @@ const faucetCooldown = new Cooldown();
 const clientKey = (req: express.Request) =>
   (req.headers['x-forwarded-for'] as string)?.split(',')[0]?.trim() || req.ip || 'anon';
 app.use('/api/', (req, res, next) => {
+  if (req.originalUrl.startsWith('/api/log')) return next(); // diagnostics — never throttle
   if (req.method === 'POST' && !limiter.allow(clientKey(req))) {
     res.status(429).json({ error: 'rate limit — slow down' });
     return;
@@ -82,6 +83,14 @@ app.use('/api/', (req, res, next) => {
 });
 
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'deadzone-gateway' }));
+
+/** Remote diagnostics: phones stream their mesh logs here so we can see what's happening. */
+app.post('/api/log', (req, res) => {
+  const { device, role, peers, lines } = req.body ?? {};
+  const tag = `[📱 ${device ?? '??'} | ${role ?? '?'} | peers:${peers ?? '?'}]`;
+  for (const l of Array.isArray(lines) ? lines : []) console.log(`${tag} ${l}`);
+  res.json({ ok: true });
+});
 
 /** dUSD balance of an address (so the app never needs to talk to an RPC directly). */
 app.get('/api/balance/:address', async (req, res) => {

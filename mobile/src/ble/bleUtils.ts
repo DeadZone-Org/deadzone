@@ -15,41 +15,40 @@ export type MessageState = {
 };
 
 // --- BLE Broadcasting Functions ---
+// Android AdvertiseSettings constants (this library version doesn't export them).
+const ADVERTISE_MODE_LOW_LATENCY = 2;
+const ADVERTISE_TX_POWER_HIGH = 3;
+let companyIdSet = false;
+
 export const broadcastOverBle = async (chunk: Uint8Array): Promise<void> => {
-  const payloadAsArray = Array.from(chunk);
-  try {
-    await (BleAdvertiser as any).stopBroadcast();
-  } catch {
-    /* ignore */
+  const payload = Array.from(chunk);
+
+  // broadcast() rejects with "Invalid company id" unless a non-zero company id is set first.
+  if (!companyIdSet) {
+    try {
+      (BleAdvertiser as any).setCompanyId(0xffff);
+    } catch {
+      /* some builds don't require it */
+    }
+    companyIdSet = true;
   }
 
   try {
-    await (BleAdvertiser as any).broadcast(MESH_SERVICE_UUID, payloadAsArray, {
-      connectable: false,
-      includeDeviceName: false,
-      includeTxPowerLevel: false,
-      advertiseMode: (BleAdvertiser as any).ADVERTISE_MODE_LOW_LATENCY,
-      txPowerLevel: (BleAdvertiser as any).ADVERTISE_TX_POWER_HIGH,
-    });
-  } catch (serviceError) {
-    console.warn(
-      'Service data broadcast failed, trying manufacturer data:',
-      serviceError
-    );
-    try {
-      await (BleAdvertiser as any).broadcastManufacturerData(
-        0xffff,
-        payloadAsArray,
-        {
-          connectable: false,
-          includeDeviceName: false,
-          includeTxPowerLevel: false,
-        }
-      );
-    } catch (manuErr) {
-      console.error('Manufacturer broadcast also failed:', manuErr);
-    }
+    await (BleAdvertiser as any).stopBroadcast();
+  } catch {
+    /* nothing was advertising */
   }
+
+  // Service-data broadcast (the proven path). Errors propagate so the caller can surface
+  // the real reason (e.g. "Advertiser unavailable on this device"). No manufacturer-data
+  // fallback — that method does not exist in react-native-ble-advertiser 0.0.17.
+  await (BleAdvertiser as any).broadcast(MESH_SERVICE_UUID, payload, {
+    connectable: false,
+    includeDeviceName: false,
+    includeTxPowerLevel: false,
+    advertiseMode: ADVERTISE_MODE_LOW_LATENCY,
+    txPowerLevel: ADVERTISE_TX_POWER_HIGH,
+  });
 };
 
 export const stopBleBroadcast = async (): Promise<void> => {
@@ -67,18 +66,18 @@ export const base64ToUint8Array = (b64: string): Uint8Array => {
 };
 
 // --- Protocol encoding/decoding ---
-export const encodeMessageToChunks = (
-  message: string,
+export const HEADER_SIZE = 3;
+// BLE legacy advert is 31 bytes; a 128-bit service UUID + flags leaves room for only a
+// ~9-byte payload, so 3 header + 6 data is the safe max. (8 overflowed → "larger than 31 bytes".)
+export const DATA_PER_CHUNK = 6;
+
+/** Fragment raw bytes into BLE-sized chunks: [id, totalChunks, chunkNum|ackFlag, ...data]. */
+export const encodeBytesToChunks = (
+  binaryArray: Uint8Array,
   options: { id?: number; isAck?: boolean } = {}
 ): Uint8Array[] => {
-  const HEADER_SIZE = 3;
-  const DATA_PER_CHUNK = 6;
   const MAX_PAYLOAD_SIZE = HEADER_SIZE + DATA_PER_CHUNK;
-
-  const encoder = new TextEncoder();
-  const binaryArray = encoder.encode(message);
   const totalChunks = Math.ceil(binaryArray.length / DATA_PER_CHUNK) || 1;
-
   if (totalChunks > 127) {
     throw new Error('Message is too large and exceeds the 127 chunk limit.');
   }
@@ -100,28 +99,20 @@ export const encodeMessageToChunks = (
   for (let i = 0; i < totalChunks; i++) {
     const chunkNumber = i + 1;
     const chunkPayload = new Uint8Array(MAX_PAYLOAD_SIZE);
-    const view = new DataView(chunkPayload.buffer);
-
-    view.setUint8(0, uniqueId);
-    view.setUint8(1, totalChunks);
-
-    let chunkNumAndFlagByte = chunkNumber & 0b01111111;
-    if (isAck) {
-      chunkNumAndFlagByte |= 0b10000000;
-    }
-    view.setUint8(2, chunkNumAndFlagByte);
-
-    const dataStartIndex = i * DATA_PER_CHUNK;
-    const dataSlice = binaryArray.slice(
-      dataStartIndex,
-      dataStartIndex + DATA_PER_CHUNK
-    );
-    chunkPayload.set(dataSlice, HEADER_SIZE);
-
+    chunkPayload[0] = uniqueId;
+    chunkPayload[1] = totalChunks;
+    chunkPayload[2] = (chunkNumber & 0b01111111) | (isAck ? 0b10000000 : 0);
+    chunkPayload.set(binaryArray.slice(i * DATA_PER_CHUNK, i * DATA_PER_CHUNK + DATA_PER_CHUNK), HEADER_SIZE);
     createdChunks.push(chunkPayload);
   }
   return createdChunks;
 };
+
+/** String convenience wrapper (used for the presence beacon). */
+export const encodeMessageToChunks = (
+  message: string,
+  options: { id?: number; isAck?: boolean } = {}
+): Uint8Array[] => encodeBytesToChunks(new TextEncoder().encode(message), options);
 
 export const decodeSingleChunk = (
   chunk: Uint8Array
