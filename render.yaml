@@ -1,0 +1,24 @@
+# One-click-ish deploy of the Deadzone gateway to Render (free).
+# In Render: New + → Blueprint → connect this repo. Then add the secret env vars
+# (PRIVATE_KEY, ZAI_API_KEY, ANTHROPIC_API_KEY) in the dashboard — they're marked sync:false.
+services:
+  - type: web
+    name: deadzone-gateway
+    runtime: docker
+    dockerfilePath: ./gateway/Dockerfile
+    dockerContext: .
+    plan: free
+    healthCheckPath: /health
+    envVars:
+      - key: PORT
+        value: 8787
+      - key: COURIER_AGENT_ID
+        value: "1"
+      - key: GLM_MODEL
+        value: glm-4.5-flash
+      - key: PRIVATE_KEY
+        sync: false
+      - key: ZAI_API_KEY
+        sync: false
+      - key: ANTHROPIC_API_KEY
+        sync: false
