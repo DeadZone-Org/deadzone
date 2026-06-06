@@ -1,0 +1,504 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+<title>DEADZONE — Send crypto in a dead zone</title>
+<meta name="description" content="Pay anyone with zero internet. Offline-signed payments hop across a Bluetooth mesh and settle on Mantle — carried by autonomous AI agents with verifiable on-chain reputation." />
+<meta name="theme-color" content="#06080a" />
+<meta property="og:title" content="DEADZONE — Send crypto in a dead zone" />
+<meta property="og:description" content="No signal. No internet. No problem. Crypto that works where the internet doesn't." />
+<link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 128 128'%3E%3Crect x='11' y='66' width='20' height='38' rx='2' fill='%2338f5b0'/%3E%3Crect x='40' y='44' width='20' height='60' rx='2' fill='%2338f5b0'/%3E%3Crect x='69' y='20' width='20' height='84' rx='2' fill='%2338f5b0'/%3E%3Crect x='98' y='58' width='20' height='46' rx='2' fill='%23ff5470'/%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=Chakra+Petch:wght@400;500;600;700&family=Space+Mono:ital,wght@0,400;0,700;1,400&display=swap" rel="stylesheet" />
+<style>
+/* ============================================================
+   DEADZONE — landing. off-grid tactical HUD.
+   ============================================================ */
+:root{
+  --void:#06080a; --void2:#0a0e12; --panel:#0c1217; --panel2:#0f181e;
+  --line:#18242b; --line2:#243843;
+  --signal:#38f5b0; --signal-deep:#0f5e47;
+  --amber:#ffc24b; --danger:#ff5470;
+  --ink:#e7f2ee; --muted:#7a8d86; --muted2:#42534d;
+  --mono:'Space Mono',ui-monospace,monospace;
+  --disp:'Chakra Petch',system-ui,sans-serif;
+  --glow:0 0 30px rgba(56,245,176,.35);
+  --max:1180px;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+html{scroll-behavior:smooth;-webkit-text-size-adjust:100%}
+body{
+  background:var(--void); color:var(--ink); font-family:var(--disp);
+  overflow-x:hidden; line-height:1.5; -webkit-font-smoothing:antialiased;
+}
+::selection{background:var(--signal);color:var(--void)}
+a{color:inherit;text-decoration:none}
+canvas{display:block}
+
+/* atmosphere layers */
+#mesh{position:fixed;inset:0;z-index:0;opacity:.9}
+.grain{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.05;mix-blend-mode:overlay;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='180' height='180'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E")}
+.vignette{position:fixed;inset:0;z-index:1;pointer-events:none;
+  background:radial-gradient(120% 90% at 50% 0%,transparent 55%,rgba(0,0,0,.55) 100%)}
+.scan{position:fixed;inset:0;z-index:1;pointer-events:none;opacity:.5;
+  background:repeating-linear-gradient(0deg,transparent 0 3px,rgba(0,0,0,.18) 3px 4px)}
+
+.wrap{position:relative;z-index:2;max-width:var(--max);margin:0 auto;padding:0 26px}
+
+/* ---------- nav ---------- */
+nav{position:fixed;top:0;left:0;right:0;z-index:30;
+  backdrop-filter:blur(10px);background:linear-gradient(var(--void),rgba(6,8,10,.4));
+  border-bottom:1px solid var(--line)}
+.nav{display:flex;align-items:center;justify-content:space-between;height:64px;max-width:var(--max);margin:0 auto;padding:0 26px}
+.brand{display:flex;align-items:center;gap:11px}
+.brand svg{height:24px;width:auto}
+.brand b{font-weight:700;font-size:19px;letter-spacing:.3em}
+.brand b i{color:var(--signal);font-style:normal}
+.nav-links{display:flex;align-items:center;gap:28px;font-family:var(--mono);font-size:12.5px;color:var(--muted);letter-spacing:.03em}
+.nav-links a{transition:color .15s}.nav-links a:hover{color:var(--signal)}
+.nav-cta{border:1px solid var(--line2);padding:9px 16px;font-family:var(--disp);font-weight:600;font-size:13px;letter-spacing:.08em;text-transform:uppercase;color:var(--ink);transition:.2s}
+.nav-cta:hover{border-color:var(--signal);color:var(--signal);box-shadow:var(--glow)}
+@media(max-width:780px){.nav-links a:not(.nav-cta){display:none}}
+
+/* ---------- shared bits ---------- */
+.eyebrow{font-family:var(--mono);font-size:12px;letter-spacing:.32em;text-transform:uppercase;color:var(--signal);display:inline-flex;align-items:center;gap:12px}
+.eyebrow::before{content:'';width:34px;height:1px;background:var(--signal);box-shadow:var(--glow)}
+.sec-no{font-family:var(--mono);font-size:12px;letter-spacing:.2em;color:var(--muted);text-transform:uppercase;display:flex;align-items:center;gap:14px;margin-bottom:26px}
+.sec-no::after{content:'';flex:1;height:1px;background:var(--line)}
+.sec-no i{color:var(--signal);font-style:normal}
+section{padding:96px 0;position:relative}
+
+.btn{display:inline-flex;align-items:center;gap:10px;font-family:var(--disp);font-weight:700;font-size:15px;letter-spacing:.08em;text-transform:uppercase;
+  padding:16px 26px;border:1px solid var(--signal);background:var(--signal);color:var(--void);cursor:pointer;transition:transform .12s,box-shadow .2s}
+.btn:hover{box-shadow:var(--glow);transform:translateY(-2px)}
+.btn-ghost{background:transparent;color:var(--ink);border-color:var(--line2)}
+.btn-ghost:hover{border-color:var(--signal);color:var(--signal);box-shadow:none}
+
+.panel{background:linear-gradient(160deg,var(--panel),var(--void2));border:1px solid var(--line);position:relative}
+.panel::before,.panel::after{content:'';position:absolute;width:11px;height:11px;border-color:var(--signal);border-style:solid;opacity:.8}
+.panel::before{top:-1px;left:-1px;border-width:1px 0 0 1px}.panel::after{bottom:-1px;right:-1px;border-width:0 1px 1px 0}
+
+/* ---------- hero ---------- */
+.hero{padding-top:150px;padding-bottom:80px;display:grid;grid-template-columns:1.05fr .95fr;gap:48px;align-items:center}
+.hero h1{font-size:clamp(46px,7vw,92px);line-height:.95;font-weight:700;text-transform:uppercase;letter-spacing:-.01em;margin:24px 0 0}
+.hero h1 .dead{position:relative;color:var(--muted)}
+.hero h1 .dead::after{content:'';position:absolute;left:-2%;right:-2%;top:54%;height:6px;background:var(--danger);box-shadow:0 0 18px rgba(255,84,112,.6);transform:rotate(-2deg)}
+.hero h1 em{font-style:normal;color:var(--signal);text-shadow:var(--glow)}
+.lead{margin-top:26px;max-width:480px;font-family:var(--mono);font-size:15px;line-height:1.75;color:var(--muted)}
+.lead b{color:var(--ink);font-weight:400;border-bottom:1px dashed var(--signal-deep)}
+.claims{display:flex;gap:10px;flex-wrap:wrap;margin-top:28px}
+.claim{font-family:var(--mono);font-size:12px;letter-spacing:.04em;color:var(--muted);border:1px solid var(--line2);padding:8px 13px;display:flex;align-items:center;gap:8px;text-transform:uppercase}
+.claim::before{content:'';width:6px;height:6px;background:var(--signal);box-shadow:var(--glow)}
+.cta-row{display:flex;gap:14px;flex-wrap:wrap;margin-top:36px}
+.scrollcue{margin-top:54px;font-family:var(--mono);font-size:11px;letter-spacing:.25em;text-transform:uppercase;color:var(--muted2);display:flex;align-items:center;gap:10px;animation:bob 2.4s ease-in-out infinite}
+.scrollcue span{display:inline-block;width:1px;height:28px;background:linear-gradient(var(--signal),transparent)}
+@keyframes bob{50%{transform:translateY(6px)}}
+
+/* ---------- the kill-the-internet device ---------- */
+.device{padding:0}
+.dev-top{display:flex;align-items:center;justify-content:space-between;padding:14px 16px;border-bottom:1px solid var(--line)}
+.bars{display:flex;align-items:flex-end;gap:3px;height:22px}
+.bars i{width:5px;background:var(--signal);box-shadow:var(--glow);transition:height .35s,background .35s,opacity .35s,box-shadow .35s}
+.bars i:nth-child(1){height:35%}.bars i:nth-child(2){height:60%}.bars i:nth-child(3){height:86%}
+.bars i:nth-child(4){height:46%;background:var(--danger);box-shadow:0 0 14px rgba(255,84,112,.5);opacity:.55}
+.device.off .bars i:nth-child(1),.device.off .bars i:nth-child(2),.device.off .bars i:nth-child(3){height:18%;background:var(--muted2);box-shadow:none;opacity:.7}
+.device.off .bars i:nth-child(4){opacity:1;height:46%}
+.net{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--signal);display:flex;align-items:center;gap:8px}
+.net .led{width:7px;height:7px;border-radius:50%;background:var(--signal);box-shadow:var(--glow)}
+.device.off .net{color:var(--danger)}.device.off .net .led{background:var(--danger);box-shadow:0 0 10px rgba(255,84,112,.6);animation:blink 1s steps(1) infinite}
+@keyframes blink{50%{opacity:.25}}
+
+.dev-body{padding:20px 18px}
+.dev-row{display:flex;justify-content:space-between;font-family:var(--mono);font-size:12px;color:var(--muted);margin-bottom:8px}
+.dev-amt{font-family:var(--disp);font-weight:700;font-size:40px;line-height:1;color:var(--ink);margin:2px 0 18px}
+.dev-amt small{font-size:16px;color:var(--muted);font-weight:400}
+.toggle{display:flex;align-items:center;gap:12px;cursor:pointer;user-select:none;margin-bottom:16px;font-family:var(--mono);font-size:12.5px;color:var(--muted)}
+.sw{width:46px;height:24px;border:1px solid var(--line2);background:var(--void);position:relative;flex:0 0 auto;transition:.25s}
+.sw::after{content:'';position:absolute;top:2px;left:2px;width:18px;height:18px;background:var(--signal);box-shadow:var(--glow);transition:.25s}
+.device.off .sw{border-color:var(--danger)}.device.off .sw::after{transform:translateX(22px);background:var(--danger);box-shadow:0 0 10px rgba(255,84,112,.6)}
+.send-btn{width:100%;justify-content:center}
+.console{font-family:var(--mono);font-size:12.5px;line-height:1.7;margin-top:16px;min-height:128px;border-top:1px dashed var(--line2);padding-top:14px}
+.cl{display:flex;gap:10px;opacity:0;transform:translateX(-6px);animation:lineIn .3s forwards}
+@keyframes lineIn{to{opacity:1;transform:none}}
+.cl .t{color:var(--muted2);flex:0 0 46px}
+.cl.g .b{color:var(--signal)}.cl.a .b{color:var(--amber)}.cl.r .b{color:var(--danger)}.cl.m .b{color:var(--muted)}
+.cl .b{color:var(--ink)}
+.cl .b a{color:var(--signal);border-bottom:1px solid var(--signal-deep)}
+.cur::after{content:'▍';color:var(--signal);animation:blink 1s steps(1) infinite}
+
+/* ---------- metrics strip ---------- */
+.metrics{display:grid;grid-template-columns:repeat(4,1fr);border:1px solid var(--line);background:var(--void2)}
+.metric{padding:26px 22px;border-right:1px solid var(--line)}
+.metric:last-child{border-right:0}
+.metric .k{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.metric .v{font-size:30px;font-weight:700;margin-top:8px;color:var(--ink)}
+.metric .v em{font-style:normal;color:var(--signal)}
+@media(max-width:780px){.metrics{grid-template-columns:1fr 1fr}.metric:nth-child(2){border-right:0}.metric{border-bottom:1px solid var(--line)}}
+
+/* ---------- problem ---------- */
+.prob h2,.flow h2,.proof h2,.courier h2{font-size:clamp(30px,4.2vw,48px);text-transform:uppercase;font-weight:700;line-height:1.02;letter-spacing:-.01em}
+.prob p{max-width:620px;font-family:var(--mono);color:var(--muted);font-size:15px;line-height:1.8;margin-top:22px}
+.prob p b{color:var(--ink);font-weight:400}
+.chips{display:grid;grid-template-columns:repeat(3,1fr);gap:14px;margin-top:38px}
+.chip{border:1px solid var(--line);background:var(--panel);padding:22px 18px}
+.chip .n{font-family:var(--mono);color:var(--danger);font-size:12px;letter-spacing:.1em}
+.chip h3{font-size:18px;margin:12px 0 8px;font-weight:600}
+.chip p{font-family:var(--mono);font-size:12.5px;color:var(--muted);line-height:1.65;margin:0;max-width:none}
+@media(max-width:780px){.chips{grid-template-columns:1fr}}
+
+/* ---------- flow ---------- */
+.flow-grid{display:grid;grid-template-columns:repeat(5,1fr);gap:0;margin-top:42px;border:1px solid var(--line)}
+.step{padding:26px 18px;border-right:1px solid var(--line);position:relative}
+.step:last-child{border-right:0}
+.step .ix{font-family:var(--mono);font-size:12px;color:var(--signal);letter-spacing:.1em}
+.step h4{font-size:17px;margin:12px 0 9px;font-weight:600;letter-spacing:.01em}
+.step p{font-family:var(--mono);font-size:12px;color:var(--muted);line-height:1.6}
+.step.dead .ix{color:var(--danger)}
+@media(max-width:920px){.flow-grid{grid-template-columns:1fr 1fr}.step{border-bottom:1px solid var(--line)}}
+@media(max-width:560px){.flow-grid{grid-template-columns:1fr}.step{border-right:0}}
+
+/* ---------- proof ---------- */
+.proof-grid{display:grid;grid-template-columns:1fr 1fr;gap:22px;margin-top:42px;align-items:start}
+.addr{display:flex;align-items:center;justify-content:space-between;gap:12px;border:1px solid var(--line);background:var(--void);padding:12px 14px;font-family:var(--mono);font-size:12px;transition:border-color .15s;margin-bottom:9px}
+.addr:hover{border-color:var(--signal-deep)}
+.addr .k{color:var(--muted);text-transform:uppercase;letter-spacing:.06em;font-size:11px}
+.addr .h{color:var(--signal)}
+.term{font-family:var(--mono);font-size:12.5px;line-height:1.75;padding:18px;background:linear-gradient(160deg,#0a1015,var(--void));border:1px solid var(--line)}
+.term .h{color:var(--muted);text-transform:uppercase;letter-spacing:.14em;font-size:11px;margin-bottom:12px}
+.term .brain{border-left:2px solid var(--signal);background:rgba(56,245,176,.05);padding:11px 13px;margin:10px 0;color:var(--ink);font-style:italic}
+.term .ln{color:var(--muted);margin:3px 0}.term .ln b{color:var(--signal);font-weight:400}
+@media(max-width:780px){.proof-grid{grid-template-columns:1fr}}
+
+/* ---------- courier ---------- */
+.courier-grid{display:grid;grid-template-columns:1fr .8fr;gap:40px;align-items:center;margin-top:20px}
+.courier p{font-family:var(--mono);color:var(--muted);font-size:15px;line-height:1.85;max-width:520px}
+.courier p b{color:var(--ink);font-weight:400}
+.card{border:1px solid var(--line2);background:linear-gradient(165deg,var(--panel2),var(--void));padding:24px;position:relative;overflow:hidden}
+.card::before{content:'';position:absolute;inset:0;background:radial-gradient(420px 200px at 90% -10%,rgba(56,245,176,.16),transparent 70%)}
+.card .top{display:flex;justify-content:space-between;align-items:flex-start;position:relative}
+.card .id{font-family:var(--mono);font-size:11px;letter-spacing:.12em;text-transform:uppercase;color:var(--muted)}
+.card .num{font-size:48px;font-weight:700;line-height:1;color:var(--signal);text-shadow:var(--glow)}
+.seal{width:54px;height:54px;border:1px solid var(--signal-deep);border-radius:50%;display:grid;place-items:center;font-family:var(--mono);font-size:8.5px;letter-spacing:.08em;color:var(--signal);text-align:center}
+.cstats{display:grid;grid-template-columns:1fr 1fr;gap:1px;background:var(--line);border:1px solid var(--line);margin-top:22px}
+.cstat{background:var(--void);padding:15px}.cstat .k{font-family:var(--mono);font-size:10px;letter-spacing:.1em;text-transform:uppercase;color:var(--muted)}
+.cstat .v{font-size:30px;font-weight:700;margin-top:5px}.cstat .v small{font-size:13px;color:var(--muted);font-weight:400}
+.gauge{height:5px;background:var(--line);margin-top:11px}.gauge i{display:block;height:100%;width:100%;background:linear-gradient(90deg,var(--signal-deep),var(--signal));box-shadow:var(--glow)}
+@media(max-width:780px){.courier-grid{grid-template-columns:1fr;gap:28px}}
+
+/* ---------- download ---------- */
+.download{text-align:center;padding:110px 0}
+.download h2{font-size:clamp(34px,5.5vw,68px);text-transform:uppercase;font-weight:700;line-height:.98}
+.download h2 em{font-style:normal;color:var(--signal);text-shadow:var(--glow)}
+.download .sub{font-family:var(--mono);color:var(--muted);margin-top:20px;font-size:14.5px}
+.dl-box{display:inline-flex;gap:30px;align-items:center;margin-top:42px;border:1px solid var(--line);background:var(--void2);padding:26px 30px;text-align:left}
+.qr{width:128px;height:128px;background:#fff;padding:8px;flex:0 0 auto;image-rendering:pixelated}
+.qr img{width:100%;height:100%;display:block}
+.dl-meta .pf{font-family:var(--mono);font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);margin-bottom:6px}
+.dl-meta .big{font-size:22px;font-weight:700;margin-bottom:14px}
+.dl-meta .ios{font-family:var(--mono);font-size:11.5px;color:var(--muted2);margin-top:12px}
+@media(max-width:560px){.dl-box{flex-direction:column;gap:22px;text-align:center}}
+
+/* ---------- footer ---------- */
+footer{border-top:1px solid var(--line);padding:40px 0 60px;position:relative;z-index:2}
+.foot{display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:20px}
+.badges{display:flex;gap:10px;flex-wrap:wrap}
+.badge{font-family:var(--mono);font-size:11px;color:var(--muted);border:1px solid var(--line);padding:6px 11px;letter-spacing:.04em}
+.foot .by{font-family:var(--mono);font-size:12px;color:var(--muted)}
+.foot .by b{color:var(--signal);font-weight:400}
+
+/* reveal on scroll */
+.rv{opacity:0;transform:translateY(20px);transition:opacity .7s cubic-bezier(.2,.7,.2,1),transform .7s cubic-bezier(.2,.7,.2,1)}
+.rv.in{opacity:1;transform:none}
+
+@media(max-width:880px){.hero{grid-template-columns:1fr;gap:36px}.proof-grid,.courier-grid{grid-template-columns:1fr}}
+@media(prefers-reduced-motion:reduce){*{animation:none!important}}
+</style>
+</head>
+<body>
+<canvas id="mesh"></canvas>
+<div class="scan"></div><div class="grain"></div><div class="vignette"></div>
+
+<nav><div class="nav">
+  <a class="brand" href="#top">
+    <svg viewBox="0 0 128 128"><rect x="11" y="66" width="20" height="38" rx="2" fill="#38f5b0"/><rect x="40" y="44" width="20" height="60" rx="2" fill="#38f5b0"/><rect x="69" y="20" width="20" height="84" rx="2" fill="#38f5b0"/><rect x="98" y="58" width="20" height="46" rx="2" fill="#ff5470"/></svg>
+    <b>DEAD<i>ZONE</i></b>
+  </a>
+  <div class="nav-links">
+    <a href="#how">How it works</a>
+    <a href="#proof">Proof</a>
+    <a href="#" data-github>GitHub</a>
+    <a class="nav-cta" href="#get">Download</a>
+  </div>
+</div></nav>
+
+<main class="wrap" id="top">
+
+  <!-- HERO -->
+  <header class="hero">
+    <div>
+      <div class="eyebrow">offline payments · settled by an autonomous agent</div>
+      <h1>Send crypto<br>in a <span class="dead">dead</span> <em>zone</em>.</h1>
+      <p class="lead">No signal? No problem. Your gasless, offline-signed payment hops across a <b>Bluetooth mesh</b> of nearby phones until one finds connectivity — where an <b>autonomous AI agent</b> settles it on <b>Mantle</b> and earns verifiable on-chain reputation for honest delivery.</p>
+      <div class="claims">
+        <div class="claim">Offline-signed</div>
+        <div class="claim">Bluetooth-relayed</div>
+        <div class="claim">Settled on Mantle</div>
+      </div>
+      <div class="cta-row">
+        <a class="btn" href="#get">⬇ Download for Android</a>
+        <a class="btn btn-ghost" href="#" data-demo>Try it in your browser ↗</a>
+      </div>
+      <div class="scrollcue"><span></span> scroll · see it work</div>
+    </div>
+
+    <!-- interactive device -->
+    <div class="device panel" id="device">
+      <div class="dev-top">
+        <div class="bars" aria-hidden="true"><i></i><i></i><i></i><i></i></div>
+        <div class="net"><span class="led"></span><span id="netLabel">ONLINE</span></div>
+      </div>
+      <div class="dev-body">
+        <div class="dev-row"><span>send · gasless</span><span id="recip">→ 0x3C44…93BC</span></div>
+        <div class="dev-amt">25 <small>dUSD</small></div>
+        <label class="toggle" id="toggle"><span class="sw"></span><span id="toggleLabel">flip to airplane mode — kill the internet</span></label>
+        <button class="btn send-btn" id="send">⚡ Send with no signal</button>
+        <div class="console" id="console"></div>
+      </div>
+    </div>
+  </header>
+
+  <!-- METRICS -->
+  <section style="padding-top:30px" class="rv">
+    <div class="metrics">
+      <div class="metric"><div class="k">internet used</div><div class="v"><em>0</em> bytes</div></div>
+      <div class="metric"><div class="k">gas you pay</div><div class="v"><em>$0</em></div></div>
+      <div class="metric"><div class="k">settlement</div><div class="v"><em>on-chain</em></div></div>
+      <div class="metric"><div class="k">live on</div><div class="v">Mantle</div></div>
+    </div>
+  </section>
+
+  <!-- PROBLEM -->
+  <section class="prob rv" id="problem">
+    <div class="sec-no"><i>01</i> the dead zone</div>
+    <h2>Every wallet needs the<br>internet — until the one<br>moment you don't have it.</h2>
+    <p>Crypto promised money without banks. But every wallet still quietly depends on a server. The second you lose signal — <b>a basement, a blackout, a packed stadium, a network shutdown</b> — your money stops working. Deadzone removes that last dependency.</p>
+    <div class="chips">
+      <div class="chip"><div class="n">// 01</div><h3>Disasters &amp; blackouts</h3><p>Towers down, power out — but nearby phones and one satellite link can still move value.</p></div>
+      <div class="chip"><div class="n">// 02</div><h3>Network shutdowns</h3><p>When the internet gets cut or censored, local payments still flow to whoever has a bridge.</p></div>
+      <div class="chip"><div class="n">// 03</div><h3>No bars, anywhere</h3><p>Rural dead zones, deep buildings, jammed events — pay as long as someone near you is online.</p></div>
+    </div>
+  </section>
+
+  <!-- HOW -->
+  <section class="flow rv" id="how">
+    <div class="sec-no"><i>02</i> how a payment crosses the dead zone</div>
+    <h2>Sign offline. Hop the mesh.<br>Settle on Mantle.</h2>
+    <div class="flow-grid">
+      <div class="step"><div class="ix">01 — sign</div><h4>Offline</h4><p>An EIP-3009 payment signed on your phone. No internet, no gas, no popup.</p></div>
+      <div class="step"><div class="ix">02 — relay</div><h4>Bluetooth</h4><p>Fragments hop phone-to-phone over BLE until one finds signal.</p></div>
+      <div class="step"><div class="ix">03 — decide</div><h4>The agent</h4><p>The gateway agent validates, rejects bad payments, batches the rest.</p></div>
+      <div class="step"><div class="ix">04 — settle</div><h4>Mantle</h4><p>It pre-commits the decision to ERC-8004, then settles on-chain.</p></div>
+      <div class="step dead"><div class="ix">05 — earn</div><h4>Reputation</h4><p>The courier attests the outcome &amp; earns verifiable on-chain trust.</p></div>
+    </div>
+  </section>
+
+  <!-- PROOF -->
+  <section class="proof rv" id="proof">
+    <div class="sec-no"><i>03</i> not a concept — live on mantle</div>
+    <h2>Mechanism, not marketing.</h2>
+    <div class="proof-grid">
+      <div>
+        <a class="addr" target="_blank" rel="noopener" data-addr="0xEF1ec1FeA446E6a7869221F00c9DC76306edca54"><span class="k">Deadzone Token (dUSD)</span><span class="h">0xEF1e…ca54 ↗</span></a>
+        <a class="addr" target="_blank" rel="noopener" data-addr="0xF817E6947CC94559e3e6AfF9f06fe938C3A0c652"><span class="k">Settlement</span><span class="h">0xF817…c652 ↗</span></a>
+        <a class="addr" target="_blank" rel="noopener" data-addr="0x6dd59064BC298BA85AA11a2953DA2BaA92B46382"><span class="k">ERC-8004 Identity</span><span class="h">0x6dd5…6382 ↗</span></a>
+        <a class="addr" target="_blank" rel="noopener" data-addr="0x936D1Aa670590767070Cb9Bde0264aA4d1543275"><span class="k">ERC-8004 Validation</span><span class="h">0x936D…3275 ↗</span></a>
+        <a class="addr" target="_blank" rel="noopener" data-addr="0x94ddC4368F8ac592Ad41067F11E43D43CDd65d94"><span class="k">ERC-8004 Reputation</span><span class="h">0x94dd…5d94 ↗</span></a>
+      </div>
+      <div class="term">
+        <div class="h">▸ gateway agent · black-box recorder</div>
+        <div class="ln">🔎 validated 1 · 1 valid, 0 rejected</div>
+        <div class="brain">"[GLM] Single valid payment with reasonable gas — settling immediately on Mantle."</div>
+        <div class="ln">🔒 pre-committed decision → <b>ERC-8004</b> (before settling)</div>
+        <div class="ln">⛓️ settled <b>25 dUSD</b> on Mantle</div>
+        <div class="ln">📜 attested outcome + reputation · score <b>100</b></div>
+        <a class="addr" style="margin-top:14px" target="_blank" rel="noopener" data-tx="0x432044bafa741701629e72fbe63175986372066f7c45f2d5edd3f9fd091617a7"><span class="k">a real offline settlement</span><span class="h">0x4320…17a7 ↗</span></a>
+      </div>
+    </div>
+  </section>
+
+  <!-- COURIER -->
+  <section class="courier rv">
+    <div class="sec-no"><i>04</i> an economy of autonomous couriers</div>
+    <div class="courier-grid">
+      <div>
+        <h2>Agents that earn<br>for honest delivery.</h2>
+        <p>Every gateway is an <b>autonomous AI agent</b> with an on-chain identity (ERC-8004). It doesn't just relay — it makes a real decision, <b>pre-commits it before settling so the record can't be faked</b>, and earns reputation it carries forever. Relaying value becomes a paid, verifiable service.</p>
+      </div>
+      <div class="card">
+        <div class="top">
+          <div><div class="id">ERC-8004 · courier</div><div class="num">#1</div></div>
+          <div class="seal">DEAD&nbsp;ZONE</div>
+        </div>
+        <div class="cstats">
+          <div class="cstat"><div class="k">deliveries</div><div class="v">∞</div></div>
+          <div class="cstat"><div class="k">trust score</div><div class="v">100<small>/100</small></div><div class="gauge"><i></i></div></div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- DOWNLOAD -->
+  <section class="download rv" id="get">
+    <div class="eyebrow" style="justify-content:center">android · free · no account</div>
+    <h2>Get <em>Deadzone</em>.<br>Send in the dark.</h2>
+    <p class="sub">Two phones, a dead zone, and real money on Mantle. That's the whole demo.</p>
+    <div class="dl-box panel">
+      <div class="qr"><img id="qr" alt="Scan to download Deadzone" src=""/></div>
+      <div class="dl-meta">
+        <div class="pf">Deadzone · Android (.apk)</div>
+        <div class="big">Scan or tap to install</div>
+        <a class="btn" href="#" data-apk>⬇ Download .apk</a>
+        <div class="ios">iOS — coming soon (Bluetooth advertising is Android-first)</div>
+      </div>
+    </div>
+  </section>
+</main>
+
+<footer><div class="wrap foot">
+  <span class="by">DEADZONE · Mantle Turing Test Hackathon 2026 · <b>send crypto with no signal</b></span>
+  <div class="badges">
+    <span class="badge">MANTLE</span><span class="badge">ERC-8004</span><span class="badge">EIP-3009</span><span class="badge">BLUETOOTH LE</span><span class="badge">Z.AI GLM</span>
+  </div>
+</div></footer>
+
+<script>
+/* ===================== config — fill these in ===================== */
+const CONFIG = {
+  apkUrl:  "REPLACE_WITH_APK_URL",                 // your EAS .apk / hosted link
+  demoUrl: "REPLACE_WITH_WEB_DEMO_URL",            // deployed web dApp
+  github:  "https://github.com/kaustubh-404/deadzone",
+  explorer:"https://sepolia.mantlescan.xyz",
+};
+
+/* wire links + QR */
+(function(){
+  document.querySelectorAll('[data-apk]').forEach(a=>a.href=CONFIG.apkUrl);
+  document.querySelectorAll('[data-demo]').forEach(a=>a.href=CONFIG.demoUrl);
+  document.querySelectorAll('[data-github]').forEach(a=>{a.href=CONFIG.github;a.target="_blank";});
+  document.querySelectorAll('[data-addr]').forEach(a=>a.href=CONFIG.explorer+'/address/'+a.dataset.addr);
+  document.querySelectorAll('[data-tx]').forEach(a=>a.href=CONFIG.explorer+'/tx/'+a.dataset.tx);
+  const qr=document.getElementById('qr');
+  const data=encodeURIComponent(CONFIG.apkUrl);
+  qr.src='https://api.qrserver.com/v1/create-qr-code/?size=240x240&margin=0&color=06080a&bgcolor=ffffff&data='+data;
+})();
+
+/* ===================== reveal on scroll ===================== */
+const io=new IntersectionObserver((es)=>es.forEach(e=>{if(e.isIntersecting){e.target.classList.add('in');io.unobserve(e.target);}}),{threshold:.12});
+document.querySelectorAll('.rv').forEach(el=>io.observe(el));
+
+/* ===================== the kill-the-internet device ===================== */
+(function(){
+  const dev=document.getElementById('device'), toggle=document.getElementById('toggle'),
+        send=document.getElementById('send'), con=document.getElementById('console'),
+        netLabel=document.getElementById('netLabel'), tLabel=document.getElementById('toggleLabel');
+  let offline=false, busy=false, t0=0;
+  const TX='0x432044bafa741701629e72fbe63175986372066f7c45f2d5edd3f9fd091617a7';
+
+  function setOffline(v){
+    offline=v; dev.classList.toggle('off',v);
+    netLabel.textContent=v?'NO SIGNAL':'ONLINE';
+    tLabel.textContent=v?'airplane mode ON — no internet':'flip to airplane mode — kill the internet';
+  }
+  toggle.addEventListener('click',()=>{if(!busy)setOffline(!offline)});
+
+  function line(cls,html,delay){
+    setTimeout(()=>{
+      const d=document.createElement('div');d.className='cl '+cls;
+      d.innerHTML='<span class="t">+'+((performance.now()-t0)/1000).toFixed(1)+'s</span><span class="b">'+html+'</span>';
+      con.appendChild(d);
+    },delay);
+  }
+  function send_(){
+    if(busy)return; busy=true; con.innerHTML=''; t0=performance.now();
+    send.style.opacity=.5; send.style.pointerEvents='none';
+    const off=offline;
+    let d=0; const S=(c,h,dt)=>{d+=dt;line(c,h,d);};
+    S('m','signing 25 dUSD offline · gasless EIP-3009 …',150);
+    if(off){
+      S('a','📡 broadcasting fragments over Bluetooth …',900);
+      S('m','hop → relay → relay → gateway',1100);
+      S('g','🔎 gateway found · validating',900);
+    }else{
+      S('g','🔎 gateway · validating',700);
+    }
+    S('g','🧠 [GLM] valid · settle now on Mantle',900);
+    S('a','🔒 pre-committed decision → ERC-8004',900);
+    S('g','⛓️ settled 25 dUSD on Mantle ✓',1100);
+    S('g','📜 attested · reputation +1 · <a href="'+CONFIG.explorer+'/tx/'+TX+'" target="_blank" rel="noopener">view tx ↗</a>',800);
+    setTimeout(()=>{busy=false;send.style.opacity=1;send.style.pointerEvents='auto';},d+400);
+  }
+  send.addEventListener('click',send_);
+})();
+
+/* ===================== live mesh background ===================== */
+(function(){
+  const cv=document.getElementById('mesh'), ctx=cv.getContext('2d');
+  let W,H,DPR,nodes=[],packets=[],raf,sweep=0;
+  const reduce=matchMedia('(prefers-reduced-motion:reduce)').matches;
+  function resize(){
+    DPR=Math.min(devicePixelRatio||1,2); W=cv.width=innerWidth*DPR; H=cv.height=innerHeight*DPR;
+    cv.style.width=innerWidth+'px';cv.style.height=innerHeight+'px';
+    const n=Math.round(Math.min(64,Math.max(26,innerWidth/26)));
+    nodes=Array.from({length:n},()=>({x:Math.random()*W,y:Math.random()*H,vx:(Math.random()-.5)*.12*DPR,vy:(Math.random()-.5)*.12*DPR}));
+    packets=[];
+  }
+  function spawnPacket(){
+    if(nodes.length<2)return;
+    const a=nodes[(Math.random()*nodes.length)|0], b=nodes[(Math.random()*nodes.length)|0];
+    if(a===b)return;
+    packets.push({a,b,t:0,sp:.006+Math.random()*.01});
+  }
+  const MAX=170; // link distance (css px)
+  function frame(){
+    ctx.clearRect(0,0,W,H);
+    const max=MAX*DPR;
+    // radar sweep (very subtle), centered upper area
+    if(!reduce){
+      sweep+=.0032; const cx=W*.72,cy=H*.30,R=Math.max(W,H)*.6;
+      const g=ctx.createConicGradient?null:null;
+      ctx.save();ctx.translate(cx,cy);ctx.rotate(sweep);
+      const grd=ctx.createLinearGradient(0,0,R,0);
+      grd.addColorStop(0,'rgba(56,245,176,0.05)');grd.addColorStop(1,'rgba(56,245,176,0)');
+      ctx.fillStyle=grd;ctx.beginPath();ctx.moveTo(0,0);ctx.arc(0,0,R,-0.18,0.18);ctx.closePath();ctx.fill();
+      ctx.restore();
+    }
+    // move + draw nodes
+    for(const p of nodes){
+      if(!reduce){p.x+=p.vx;p.y+=p.vy;}
+      if(p.x<0)p.x+=W;if(p.x>W)p.x-=W;if(p.y<0)p.y+=H;if(p.y>H)p.y-=H;
+    }
+    // links
+    for(let i=0;i<nodes.length;i++)for(let j=i+1;j<nodes.length;j++){
+      const a=nodes[i],b=nodes[j],dx=a.x-b.x,dy=a.y-b.y,d=Math.hypot(dx,dy);
+      if(d<max){const o=(1-d/max)*0.14;ctx.strokeStyle='rgba(56,245,176,'+o+')';ctx.lineWidth=DPR;ctx.beginPath();ctx.moveTo(a.x,a.y);ctx.lineTo(b.x,b.y);ctx.stroke();}
+    }
+    // nodes
+    for(const p of nodes){ctx.fillStyle='rgba(56,245,176,0.5)';ctx.beginPath();ctx.arc(p.x,p.y,1.3*DPR,0,7);ctx.fill();}
+    // packets
+    for(let i=packets.length-1;i>=0;i--){
+      const pk=packets[i];pk.t+=pk.sp;if(pk.t>=1){packets.splice(i,1);continue;}
+      const x=pk.a.x+(pk.b.x-pk.a.x)*pk.t, y=pk.a.y+(pk.b.y-pk.a.y)*pk.t;
+      ctx.fillStyle='rgba(56,245,176,1)';ctx.shadowColor='rgba(56,245,176,.9)';ctx.shadowBlur=10*DPR;
+      ctx.beginPath();ctx.arc(x,y,2.1*DPR,0,7);ctx.fill();ctx.shadowBlur=0;
+    }
+    raf=requestAnimationFrame(frame);
+  }
+  resize();addEventListener('resize',resize);
+  if(!reduce){frame();setInterval(spawnPacket,520);} else {frame();}
+})();
+</script>
+</body>
+</html>
