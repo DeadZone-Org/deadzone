@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="Deadzone adaptive icon foreground">
+  <!-- transparent background; Android applies the backgroundColor + masks corners.
+       Mark sits inside the ~66% safe zone. -->
+  <g transform="translate(294.4 294.4) scale(3.4)">
+    <rect x="11" y="66" width="20" height="38" rx="2" fill="#38f5b0"/>
+    <rect x="40" y="44" width="20" height="60" rx="2" fill="#38f5b0"/>
+    <rect x="69" y="20" width="20" height="84" rx="2" fill="#38f5b0"/>
+    <rect x="98" y="58" width="20" height="46" rx="2" fill="#ff5470"/>
+  </g>
+</svg>

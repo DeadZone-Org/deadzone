@@ -7,12 +7,17 @@
     "scheme": "deadzone",
     "userInterfaceStyle": "dark",
     "newArchEnabled": true,
+    "icon": "./assets/icon.png",
     "android": {
       "package": "com.deadzone.app",
       "compileSdkVersion": 34,
       "targetSdkVersion": 34,
       "minSdkVersion": 23,
-      "edgeToEdgeEnabled": true
+      "edgeToEdgeEnabled": true,
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#06080a"
+      }
     },
     "plugins": [
       "./plugins/withBlePermissions",

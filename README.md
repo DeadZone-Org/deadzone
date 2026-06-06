@@ -1,4 +1,8 @@
-# 🛰️ DEADZONE — Send crypto in a dead zone
+<img src="mobile/assets/icon.png" width="84" align="left" alt="Deadzone" />
+
+# DEADZONE — Send crypto in a dead zone
+
+<br clear="left" />
 
 > **No signal? No problem.** DEADZONE lets you pay anyone with **zero internet**. Your gasless, offline-signed payment hops across a Bluetooth mesh of nearby phones — *Deadzone's couriers* — until one reaches connectivity, where an **autonomous AI agent** validates it, batches it, settles it on **Mantle**, and earns **verifiable on-chain reputation (ERC-8004)** for delivering it honestly.
 
