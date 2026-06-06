@@ -26,7 +26,7 @@
       "expo-dev-client"
     ],
     "extra": {
-      "gatewayUrl": "http://192.168.1.8:8787",
+      "gatewayUrl": "https://deadzone-production-268b.up.railway.app",
       "eas": {
         "projectId": "f4b902f6-f8fd-48de-b352-e9a950392ba9"
       }

@@ -23,11 +23,15 @@ export interface PayResult {
 
 const EXPLORER = 'https://sepolia.mantlescan.xyz';
 
-async function tryFetch<T>(url: string, init?: RequestInit, timeoutMs = 60_000): Promise<T> {
+/** Gateway base URL: Vite env override → public Railway gateway → dev proxy fallback. */
+const GATEWAY: string =
+  (import.meta as any).env?.VITE_GATEWAY_URL ?? 'https://deadzone-production-268b.up.railway.app';
+
+async function tryFetch<T>(path: string, init?: RequestInit, timeoutMs = 60_000): Promise<T> {
   const ctrl = new AbortController();
   const t = setTimeout(() => ctrl.abort(), timeoutMs);
   try {
-    const res = await fetch(url, { ...init, signal: ctrl.signal });
+    const res = await fetch(`${GATEWAY}${path}`, { ...init, signal: ctrl.signal });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     return (await res.json()) as T;
   } finally {
