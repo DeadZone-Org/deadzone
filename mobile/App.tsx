@@ -13,7 +13,7 @@ type Tab = 'send' | 'wallet';
 
 export default function App() {
   const { wallet, loading } = useWallet();
-  const mesh = useMesh();
+  const mesh = useMesh(wallet?.address ?? null);
   const [tab, setTab] = useState<Tab>('send');
 
   return (
@@ -35,7 +35,9 @@ export default function App() {
           </View>
           <View style={st.meshState}>
             <Dot color={mesh.online ? C.amber : C.danger} />
-            <Text style={st.meshText}>{mesh.online ? 'GATEWAY' : 'OFFLINE'} · {mesh.peers} peers</Text>
+            <Text style={st.meshText} numberOfLines={1}>
+              {mesh.online ? 'GATEWAY' : 'OFFLINE'} · {mesh.peers}p
+            </Text>
           </View>
         </View>
 
@@ -69,16 +71,17 @@ const st = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
-    paddingHorizontal: 18,
+    paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: C.line,
+    gap: 8,
   },
-  brand: { flexDirection: 'row', alignItems: 'center', gap: 10 },
+  brand: { flexDirection: 'row', alignItems: 'center', gap: 9, flexShrink: 1, minWidth: 0 },
   bars: { flexDirection: 'row', alignItems: 'flex-end', gap: 3, height: 22 },
   bar: { width: 4, backgroundColor: C.signal },
-  word: { color: C.ink, fontWeight: '700', fontSize: 18, letterSpacing: 4 },
-  meshState: { flexDirection: 'row', alignItems: 'center', gap: 8 },
+  word: { color: C.ink, fontWeight: '700', fontSize: 17, letterSpacing: 2.5 },
+  meshState: { flexDirection: 'row', alignItems: 'center', gap: 7, flexShrink: 0 },
   meshText: { color: C.muted, fontFamily: MONO, fontSize: 11, letterSpacing: 0.5 },
   body: { padding: 16 },
   loading: { color: C.muted, fontFamily: MONO, textAlign: 'center', marginTop: 40 },

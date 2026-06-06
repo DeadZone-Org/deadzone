@@ -40,7 +40,7 @@ const PEER_TTL_MS = 7000;
  *  - if THIS device has internet (gateway role): reassemble a full authorization and
  *    forward it to the gateway to settle on Mantle
  */
-export function useMesh() {
+export function useMesh(selfAddress?: string | null) {
   const [online, setOnline] = useState(false);
   const [peers, setPeers] = useState(0);
   const [events, setEvents] = useState<MeshEvent[]>([]);
@@ -67,6 +67,11 @@ export function useMesh() {
     pendingLogsRef.current.push(`+${at}s [${kind}] ${line}`); // streamed to the gateway for remote debugging
     setEvents((prev) => [...prev.slice(-40), { at: Date.now() - t0.current, kind, line }]);
   }, []);
+
+  // log this device's wallet address (so remote logs are unambiguous about who is who)
+  useEffect(() => {
+    if (selfAddress) log('info', `this wallet ${selfAddress}`);
+  }, [selfAddress, log]);
 
   // connectivity → role
   useEffect(() => {
