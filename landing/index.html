@@ -249,7 +249,7 @@ footer{border-top:1px solid var(--line);padding:40px 0 60px;position:relative;z-
       </div>
       <div class="cta-row">
         <a class="btn" href="#get">⬇ Download for Android</a>
-        <a class="btn btn-ghost" href="#" data-demo>Try it in your browser ↗</a>
+        <a class="btn btn-ghost" href="#" data-github>View on GitHub ↗</a>
       </div>
       <div class="scrollcue"><span></span> scroll · see it work</div>
     </div>
@@ -378,7 +378,6 @@ footer{border-top:1px solid var(--line);padding:40px 0 60px;position:relative;z-
 /* ===================== config — fill these in ===================== */
 const CONFIG = {
   apkUrl:  "REPLACE_WITH_APK_URL",                 // your EAS .apk / hosted link
-  demoUrl: "REPLACE_WITH_WEB_DEMO_URL",            // deployed web dApp
   github:  "https://github.com/kaustubh-404/deadzone",
   explorer:"https://sepolia.mantlescan.xyz",
 };
@@ -386,7 +385,6 @@ const CONFIG = {
 /* wire links + QR */
 (function(){
   document.querySelectorAll('[data-apk]').forEach(a=>a.href=CONFIG.apkUrl);
-  document.querySelectorAll('[data-demo]').forEach(a=>a.href=CONFIG.demoUrl);
   document.querySelectorAll('[data-github]').forEach(a=>{a.href=CONFIG.github;a.target="_blank";});
   document.querySelectorAll('[data-addr]').forEach(a=>a.href=CONFIG.explorer+'/address/'+a.dataset.addr);
   document.querySelectorAll('[data-tx]').forEach(a=>a.href=CONFIG.explorer+'/tx/'+a.dataset.tx);
