@@ -42,6 +42,20 @@ export function relay(auth: WireAuth) {
   return post<SettleResult>('/api/relay', { auth });
 }
 
+/** Is the gateway reachable? This is the authoritative "am I online" signal for Deadzone. */
+export async function healthCheck(timeoutMs = 9000): Promise<boolean> {
+  const ctrl = new AbortController();
+  const t = setTimeout(() => ctrl.abort(), timeoutMs);
+  try {
+    const res = await fetch(`${GATEWAY_URL}/health`, { signal: ctrl.signal });
+    return res.ok;
+  } catch {
+    return false;
+  } finally {
+    clearTimeout(t);
+  }
+}
+
 /** Read an address's dUSD balance via the gateway (no in-app RPC). */
 export async function balance(address: string): Promise<bigint> {
   const ctrl = new AbortController();

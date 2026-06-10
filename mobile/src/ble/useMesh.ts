@@ -3,7 +3,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { PermissionsAndroid, Platform } from 'react-native';
 import BleAdvertiser from 'react-native-ble-advertiser';
 import { BleManager } from 'react-native-ble-plx';
-import { pushLogs, relay, type SettleResult } from '../lib/gateway';
+import { healthCheck, pushLogs, relay, type SettleResult } from '../lib/gateway';
 import type { WireAuth } from '../lib/eip3009';
 import { decodeAuth, encodeAuth } from '../lib/codec';
 import {
@@ -73,14 +73,31 @@ export function useMesh(selfAddress?: string | null) {
     if (selfAddress) log('info', `this wallet ${selfAddress}`);
   }, [selfAddress, log]);
 
-  // connectivity → role
+  // connectivity → role. Authoritative signal = can we actually REACH the gateway?
+  // (NetInfo.isConnected is unreliable in standalone builds.) NetInfo is used only as an
+  // instant "went offline" hint for airplane mode; a real reachability ping confirms online.
   useEffect(() => {
-    const unsub = NetInfo.addEventListener((s) => {
-      const up = Boolean(s.isConnected);
+    let mounted = true;
+    const apply = (up: boolean) => {
+      if (!mounted) return;
       onlineRef.current = up;
       setOnline(up);
+    };
+    const ping = async () => {
+      const ok = await healthCheck();
+      apply(ok);
+    };
+    ping(); // check immediately on launch
+    const iv = setInterval(ping, 6000);
+    const unsub = NetInfo.addEventListener((s) => {
+      if (s.isConnected === false) apply(false); // airplane mode → offline instantly
+      else ping(); // (re)connected → confirm by reaching the gateway
     });
-    return () => unsub();
+    return () => {
+      mounted = false;
+      clearInterval(iv);
+      unsub();
+    };
   }, []);
 
   // permissions + manager + scan loop + presence beacon
