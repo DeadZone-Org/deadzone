@@ -85,11 +85,23 @@ app.use('/api/', (req, res, next) => {
 app.get('/health', (_req, res) => res.json({ ok: true, service: 'deadzone-gateway' }));
 
 /** Remote diagnostics: phones stream their mesh logs here so we can see what's happening. */
+const recentLogs: string[] = [];
 app.post('/api/log', (req, res) => {
   const { device, role, peers, lines } = req.body ?? {};
   const tag = `[📱 ${device ?? '??'} | ${role ?? '?'} | peers:${peers ?? '?'}]`;
-  for (const l of Array.isArray(lines) ? lines : []) console.log(`${tag} ${l}`);
+  for (const l of Array.isArray(lines) ? lines : []) {
+    const entry = `${tag} ${l}`;
+    console.log(entry);
+    recentLogs.push(entry);
+  }
+  while (recentLogs.length > 400) recentLogs.shift();
   res.json({ ok: true });
+});
+
+/** Read the last few hundred streamed log lines (plain text) for remote debugging. */
+app.get('/api/logs/recent', (req, res) => {
+  const n = Math.min(Number(req.query.n) || 200, 400);
+  res.type('text/plain').send(recentLogs.slice(-n).join('\n') || '(no logs yet)');
 });
 
 /** dUSD balance of an address (so the app never needs to talk to an RPC directly). */

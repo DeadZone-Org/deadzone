@@ -61,6 +61,8 @@ export function useMesh(selfAddress?: string | null) {
   const advErrRef = useRef(false);
   const advStateRef = useRef<'idle' | 'presence' | 'payment'>('idle');
   const pendingLogsRef = useRef<string[]>([]);
+  const scanHitsRef = useRef(0);
+  const scanErrRef = useRef(false);
 
   const log = useCallback((kind: MeshEvent['kind'], line: string) => {
     const at = ((Date.now() - t0.current) / 1000).toFixed(1);
@@ -108,14 +110,33 @@ export function useMesh(selfAddress?: string | null) {
     // precompute our presence beacon: "DZP:<id>" (single BLE fragment)
     presenceRef.current = encodeMessageToChunks(`${PRESENCE_PREFIX}${myIdRef.current}`);
 
+    const onScan = (device: any | null, error: string | null) => {
+      if (error) {
+        if (!scanErrRef.current) {
+          scanErrRef.current = true;
+          log('error', `scan error: ${error}`);
+        }
+        return;
+      }
+      scanHitsRef.current += 1; // any BLE device seen → scanner is alive
+    };
+
     (async () => {
       if (Platform.OS === 'android') {
-        await PermissionsAndroid.requestMultiple([
+        const res = await PermissionsAndroid.requestMultiple([
           'android.permission.BLUETOOTH_SCAN' as any,
           'android.permission.BLUETOOTH_ADVERTISE' as any,
           'android.permission.BLUETOOTH_CONNECT' as any,
           'android.permission.ACCESS_FINE_LOCATION' as any,
         ]);
+        const denied = Object.entries(res)
+          .filter(([, v]) => v !== 'granted')
+          .map(([k]) => k.split('.').pop());
+        if (denied.length) {
+          log('error', `permission NOT granted: ${denied.join(', ')} → Settings ▸ Apps ▸ Deadzone ▸ Permissions`);
+        } else {
+          log('info', 'BLE permissions granted ✓');
+        }
       }
       try {
         (BleAdvertiser as any).setCompanyId(0xffff);
@@ -125,7 +146,7 @@ export function useMesh(selfAddress?: string | null) {
       const mgr = new BleManager();
       managerRef.current = mgr;
       log('info', `mesh radio online · id ${myIdRef.current} · scanning + beaconing`);
-      stopListen = listenOverBle(mgr, (chunk) => onChunk(chunk));
+      stopListen = listenOverBle(mgr, (chunk) => onChunk(chunk), onScan);
 
       // Recover from Bluetooth being toggled (airplane mode): when the adapter powers
       // back on, the OS has killed our scan + advertisement, so restart both.
@@ -138,7 +159,7 @@ export function useMesh(selfAddress?: string | null) {
             /* noop */
           }
           stopListen?.();
-          stopListen = listenOverBle(mgr, (chunk) => onChunk(chunk));
+          stopListen = listenOverBle(mgr, (chunk) => onChunk(chunk), onScan);
           log('info', 'bluetooth on · restarted scan + beacon');
         }
       }, true);
@@ -203,11 +224,25 @@ export function useMesh(selfAddress?: string | null) {
       if (changed) setPeers(peerSeen.current.size);
     }, 2000);
 
+    // radio health heartbeat — streamed to the gateway so the failure mode is visible
+    // remotely: scan-hits>0 ⇒ scanner alive; adv=presence ⇒ advertiser alive; peers ⇒ both ends working.
+    let lastHits = 0;
+    const heartbeat = setInterval(() => {
+      const hits = scanHitsRef.current;
+      const delta = hits - lastHits;
+      lastHits = hits;
+      log(
+        'info',
+        `radio · scan ${delta > 0 ? `alive (+${delta})` : 'SILENT'} · adv ${advStateRef.current} · peers ${peerSeen.current.size}`,
+      );
+    }, 5000);
+
     return () => {
       stopListen?.();
       btSub?.remove();
       if (loopRef.current) clearInterval(loopRef.current);
       clearInterval(prune);
+      clearInterval(heartbeat);
       clearInterval(flush);
       stopBleBroadcast().catch(() => {});
       managerRef.current?.destroy();

@@ -154,10 +154,12 @@ export const decodeSingleChunk = (
 // --- BLE Listening Function ---
 export const listenOverBle = (
   bleManager: BleManager | null,
-  onChunkReceived: (chunk: Uint8Array) => void
+  onChunkReceived: (chunk: Uint8Array) => void,
+  onScan?: (device: any | null, error: string | null) => void
 ): (() => void) => {
   if (!bleManager) {
     console.error('BLE Manager not initialized');
+    onScan?.(null, 'BLE Manager not initialized');
     return () => {};
   }
 
@@ -170,9 +172,11 @@ export const listenOverBle = (
     (error, device) => {
       if (error) {
         console.error('BLE Scan Error:', error.message);
+        onScan?.(null, error.message);
         return;
       }
       if (!device) return;
+      onScan?.(device, null);
 
       const serviceDataB64 = (device as any).serviceData?.[MESH_SERVICE_UUID];
       const manufacturerDataB64 = (device as any).manufacturerData;
