@@ -103,6 +103,7 @@ export function useMesh(selfAddress?: string | null) {
   // permissions + manager + scan loop + presence beacon
   useEffect(() => {
     let stopListen: (() => void) | null = null;
+    let btSub: { remove: () => void } | null = null;
 
     // precompute our presence beacon: "DZP:<id>" (single BLE fragment)
     presenceRef.current = encodeMessageToChunks(`${PRESENCE_PREFIX}${myIdRef.current}`);
@@ -125,9 +126,27 @@ export function useMesh(selfAddress?: string | null) {
       managerRef.current = mgr;
       log('info', `mesh radio online · id ${myIdRef.current} · scanning + beaconing`);
       stopListen = listenOverBle(mgr, (chunk) => onChunk(chunk));
+
+      // Recover from Bluetooth being toggled (airplane mode): when the adapter powers
+      // back on, the OS has killed our scan + advertisement, so restart both.
+      btSub = mgr.onStateChange((state) => {
+        if (state === 'PoweredOn') {
+          advStateRef.current = 'idle'; // force the loop to re-broadcast the beacon
+          try {
+            (BleAdvertiser as any).setCompanyId(0xffff);
+          } catch {
+            /* noop */
+          }
+          stopListen?.();
+          stopListen = listenOverBle(mgr, (chunk) => onChunk(chunk));
+          log('info', 'bluetooth on · restarted scan + beacon');
+        }
+      }, true);
     })();
 
-    // broadcast loop: cycle payment fragments while sending, else advertise presence once
+    // broadcast loop: cycle payment fragments while sending, else KEEP re-asserting the
+    // presence beacon (every ~2.5s) so it survives the OS killing the advertiser on BT toggle.
+    let lastPresence = 0;
     loopRef.current = setInterval(async () => {
       try {
         if (queueRef.current.length > 0) {
@@ -135,9 +154,13 @@ export function useMesh(selfAddress?: string | null) {
           cursorRef.current += 1;
           await broadcastOverBle(chunk);
           advStateRef.current = 'payment';
-        } else if (advStateRef.current !== 'presence' && presenceRef.current.length > 0) {
-          await broadcastOverBle(presenceRef.current[0]); // leave it advertising continuously
+        } else if (
+          presenceRef.current.length > 0 &&
+          (advStateRef.current !== 'presence' || Date.now() - lastPresence > 2500)
+        ) {
+          await broadcastOverBle(presenceRef.current[0]);
           advStateRef.current = 'presence';
+          lastPresence = Date.now();
         } else {
           return;
         }
@@ -182,6 +205,7 @@ export function useMesh(selfAddress?: string | null) {
 
     return () => {
       stopListen?.();
+      btSub?.remove();
       if (loopRef.current) clearInterval(loopRef.current);
       clearInterval(prune);
       clearInterval(flush);
